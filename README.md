@@ -5,7 +5,7 @@ Application for minimizing file sizes using [imagemagick](https://imagemagick.or
 ## Current behaviour
 
 ```bash
-rshrink [FILE_REGEX] [IN_DIR] [OUT_DIR] --dimensions HxW
+rshrink [FILE_REGEX] [IN_DIR] [OUT_DIR] --dimensions WxH
 ```
 
 Example usage:

@@ -41,21 +41,21 @@ struct Args {
     out_dir: String,
 }
 
-impl Args {
-    fn get_dimensions(&self) -> Option<Result<Dimensions, &str>> {
-        if let Some(d) = &self.dimensions {
-            let dimensions: Vec<&str> = d.split("x").collect();
-            if let [width, height] = dimensions[..] {
-                return Some(Ok(Dimensions {
-                    width: width.parse::<usize>().expect("Invalid width!"),
-                    height: height.parse::<usize>().expect("Invalid height!"),
-                }));
-            }
-            return Some(Err("Invalid dimensions!"));
-        }
-        None
-    }
-}
+// impl Args {
+// fn get_dimensions(&self) -> Option<Result<Dimensions, &str>> {
+// if let Some(d) = &self.dimensions {
+// let dimensions: Vec<&str> = d.split("x").collect();
+// if let [width, height] = dimensions[..] {
+// return Some(Ok(Dimensions {
+// width: width.parse::<usize>().expect("Invalid width!"),
+// height: height.parse::<usize>().expect("Invalid height!"),
+// }));
+// }
+// return Some(Err("Invalid dimensions!"));
+// }
+// None
+// }
+// }
 
 fn main() {
     let Args {
@@ -64,11 +64,6 @@ fn main() {
         files,
         dimensions,
     } = Args::parse();
-    // let dimensions = Dimensions::parse_dimensions(&dimensions.expect("Invalid dimensions!")).expect(msg);
-
-    // let in_dir = &args.in_dir;
-    // let out_dir = &args.out_dir;
-    // let files = &args.files;
 
     println!(
         "In Directory: {}\nOut Directory: {}\nDimensions: {:?}\nFiles: {}",
