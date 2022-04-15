@@ -9,3 +9,4 @@ edition = "2021"
 ffmpeg-next = "5.0.3"
 magick_rust = "0.16.0"
 regex = "1"
+clap = { version = "3.1.8", features = ["derive"] }
