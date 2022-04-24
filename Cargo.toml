@@ -6,7 +6,8 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-ffmpeg-next = "5.0.3"
+# ffmpeg-next = "5.0.3"
 magick_rust = "0.16.0"
 regex = "1"
 clap = { version = "3.1.8", features = ["derive"] }
+num_cpus = "1.0"

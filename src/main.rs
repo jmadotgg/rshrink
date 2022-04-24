@@ -1,14 +1,19 @@
 use clap::Parser;
 use magick_rust::{magick_wand_genesis, MagickError, MagickWand};
 use regex::Regex;
-use std::{ffi::OsString, fs, io, sync::Once};
+use rshrink::ThreadPool;
+use std::{
+    ffi::OsString,
+    fs, io,
+    sync::{Arc, Once},
+};
 
 static START: Once = Once::new();
 static DEFAULT_REGEX: &str = ".*.(jpg|png|JPG|PNG|JPEG|jpeg)";
 static DEFAULT_IN_DIR: &str = ".";
 static DEFAULT_OUT_DIR: &str = "_rshrinked";
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Dimensions {
     width: usize,
     height: usize,
@@ -28,17 +33,6 @@ impl Dimensions {
         Err("Invalid dimensions!")
     }
 }
-
-// Targeted terminal command;
-//magick \
-//        $fullFileName \
-//        -sampling-factor 4:2:0 \
-//        -strip \
-//        -quality 85 \
-//        -interlace Plane \
-//        -gaussian-blur 0.05 \
-//        -colorspace RGB \
-//        $newFilePath
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -97,8 +91,10 @@ fn main() {
     println!("Matched files {:?}\n", selected_files);
 
     let dims = match &dimensions {
-        Some(d) => Dimensions::parse_dimensions(&d).expect("Failed to parse dimensions!"),
-        None => Dimensions::new(1920, 1080),
+        Some(d) => {
+            Option::Some(Dimensions::parse_dimensions(&d).expect("Failed to parse dimensions!"))
+        }
+        None => None,
     };
 
     let apply_gaussian_blur = match gaussian_blur {
@@ -110,54 +106,100 @@ fn main() {
         magick_wand_genesis();
     });
 
-    let mut wand = MagickWand::new();
+    let cpu_count = num_cpus::get();
+    println!("Number of cpus: {}", cpu_count);
 
-    println!("Progress:");
+    // let tasks: Vec<JoinHandle<()>> = selected_files
+    // .iter()
+    // .map(|file| {
+    // let file = file.clone();
+    // let in_dir = in_dir.clone();
+    // let out_dir = out_dir.clone();
+    // let dims = dims.clone();
+    // thread::spawn(move || {
+    // let mut wand = MagickWand::new();
+    // if let Some(file_name) = file.to_str() {
+    // match shrink(
+    // &mut wand,
+    // file_name,
+    // in_dir,
+    // out_dir,
+    // &dims,
+    // compression_quality,
+    // apply_gaussian_blur.clone(),
+    // ) {
+    // Ok(()) => (),
+    // Err(err) => eprintln!("Failed to shrink file {}! : {}", file_name, err),
+    // };
+    // }
+    // })
+    // }) // .collect();
+    // for (i, task) in tasks.into_iter().enumerate() {
+    // println!("=> {}%", ((i as f32 / file_count as f32) * 100.0).floor(),);
+    // match task.join() {
+    // Ok(_) => eprintln!("Done"),
+    // Err(err) => println!("{:?}", err),
+    // };
+    // }
 
-    let file_count = selected_files.len();
-    for (i, file) in selected_files.iter().enumerate() {
-        println!(
-            "=> {}% [{:?}]",
-            ((i as f32 / file_count as f32) * 100.0).floor(),
-            file
-        );
+    let in_dir = Arc::new(in_dir);
+    let out_dir = Arc::new(out_dir);
+    let dims = Arc::new(dims);
+    let pool = ThreadPool::new(cpu_count);
 
+    for file in selected_files.iter() {
         // https://stackoverflow.com/questions/34837011/how-to-clear-the-terminal-screen-in-rust-after-a-new-line-is-printed
         // print!("\x1B[2J\x1B[1;1H");
         // print!("{esc}c", esc = 27 as char);
+        let file = file.clone();
+        let in_dir = Arc::clone(&in_dir);
+        let out_dir = Arc::clone(&out_dir);
+        let dims = Arc::clone(&dims);
 
-        if let Some(file_name) = file.to_str() {
-            match shrink(
-                &mut wand,
-                file_name,
-                &out_dir,
-                &dims,
-                compression_quality,
-                apply_gaussian_blur,
-            ) {
-                Ok(()) => (),
-                Err(err) => eprintln!("Failed to shrink file {}! : {}", file_name, err),
-            };
-        }
+        pool.execute(move || {
+            if let Some(file_name) = file.to_str() {
+                match shrink(
+                    file_name,
+                    in_dir,
+                    out_dir,
+                    dims,
+                    compression_quality,
+                    apply_gaussian_blur.clone(),
+                ) {
+                    Ok(()) => (),
+                    Err(err) => eprintln!("Failed to shrink file {}! : {}", file_name, err),
+                };
+            }
+        });
     }
 }
 
 fn shrink(
-    wand: &mut MagickWand,
     file_name: &str,
-    out_dir: &str,
-    dims: &Dimensions,
+    in_dir: Arc<String>,
+    out_dir: Arc<String>,
+    dims: Arc<Option<Dimensions>>,
     compression_quality: usize,
     apply_gaussian_blur: bool,
 ) -> Result<(), MagickError> {
-    wand.read_image(&file_name)?;
-    wand.fit(dims.width, dims.height);
+    let mut wand = MagickWand::new();
+    wand.read_image(format!("{in_dir}/{file_name}").as_str())?;
+
+    // Credit: https://stackoverflow.com/questions/48471607/how-to-match-on-an-option-inside-an-arc
+    // if let Some(ref d) = *dims {
+    // wand.fit(d.width, d.height);
+    // }
+    if let Some(d) = Option::as_ref(&dims) {
+        wand.fit(d.width, d.height);
+    }
 
     wand.set_sampling_factors(&[4.0, 2.0, 0.0])?;
     wand.strip_image()?;
     wand.set_image_compression_quality(compression_quality)?;
     // 3 = Plane (build.rs)
     wand.set_interlace_scheme(3)?;
+    // 26 should be RGB (have to build magick_rust myself to verify)
+    // wand.set_image_colorspace(30)?;
 
     if apply_gaussian_blur {
         // Pretty slow
