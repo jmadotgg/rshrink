@@ -24,7 +24,7 @@ Default positional argument values:
 
 Default flag values:
 
-| Flag long         | flag short | Default value | Additional notes                                                 |
+| Flag long         | Flag short | Default value | Additional notes                                                 |
 | ----------------- | ---------- | ------------- | ---------------------------------------------------------------- |
 | `--dimensions`    | `-d`       | [ORIGINAL]    | Scales image to fit dimensions (preserves original aspect ratio) |
 | `--gaussian_blur` | `-g`       | `false`       | slow (not recommended)                                           |
