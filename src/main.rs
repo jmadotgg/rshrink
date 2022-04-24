@@ -1,6 +1,6 @@
 use clap::Parser;
 use magick_rust::magick_wand_genesis;
-use rshrink::filesystem::{create_dir_if_not_exists, list_files, parse_file};
+use rshrink::filesystem::{create_dir_if_not_exists, filter_files, list_files};
 use rshrink::imagemagick::shrink;
 use rshrink::{threadpool::ThreadPool, utils::Dimensions};
 use std::sync::{Arc, Once};
@@ -55,14 +55,7 @@ fn main() {
     // TODO: Print Error to console (More elegant way than using match?)
     let all_files = list_files(&in_dir).expect("Failed to read files!");
 
-    let selected_files = all_files
-        .iter()
-        .cloned()
-        .filter(|f| match f.to_str() {
-            Some(file_name) => parse_file(&files, file_name),
-            None => false,
-        })
-        .collect::<Vec<_>>();
+    let selected_files = filter_files(all_files, &files);
 
     println!("Matched files {:?}\n", selected_files);
 

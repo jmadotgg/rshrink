@@ -7,7 +7,7 @@ pub fn create_dir_if_not_exists(dir: &str) -> io::Result<()> {
     Ok(())
 }
 
-pub fn parse_file(file_sel: &str, file_name: &str) -> bool {
+fn parse_file(file_sel: &str, file_name: &str) -> bool {
     match Regex::new(file_sel) {
         Ok(reg) => reg.is_match(&format!(r"{file_name}")),
         Err(err) => {
@@ -15,6 +15,17 @@ pub fn parse_file(file_sel: &str, file_name: &str) -> bool {
             false
         }
     }
+}
+
+pub fn filter_files(files: Vec<OsString>, file_sel: &str) -> Vec<OsString> {
+    files
+        .iter()
+        .cloned()
+        .filter(|f| match f.to_str() {
+            Some(file_name) => parse_file(file_sel, file_name),
+            None => false,
+        })
+        .collect::<Vec<_>>()
 }
 
 pub fn list_files(path: &str) -> io::Result<Vec<OsString>> {
