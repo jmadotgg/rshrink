@@ -6,6 +6,6 @@
   - [ ] traverse files recursively
 - [ ] nice to have
   - [ ] add ffmpeg
-  - [ ] multithreading?
+  - [x] multithreading
   - [ ] better error handling
   - [ ] add ui
