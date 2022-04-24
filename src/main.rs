@@ -1,38 +1,14 @@
 use clap::Parser;
-use magick_rust::{magick_wand_genesis, MagickError, MagickWand};
-use regex::Regex;
-use rshrink::ThreadPool;
-use std::{
-    ffi::OsString,
-    fs, io,
-    sync::{Arc, Once},
-};
+use magick_rust::magick_wand_genesis;
+use rshrink::filesystem::{create_dir_if_not_exists, list_files, parse_file};
+use rshrink::imagemagick::shrink;
+use rshrink::{threadpool::ThreadPool, utils::Dimensions};
+use std::sync::{Arc, Once};
 
-static START: Once = Once::new();
 static DEFAULT_REGEX: &str = ".*.(jpg|png|JPG|PNG|JPEG|jpeg)";
 static DEFAULT_IN_DIR: &str = ".";
 static DEFAULT_OUT_DIR: &str = "_rshrinked";
-
-#[derive(Debug, Clone)]
-struct Dimensions {
-    width: usize,
-    height: usize,
-}
-impl Dimensions {
-    fn new(width: usize, height: usize) -> Dimensions {
-        Dimensions { width, height }
-    }
-    fn parse_dimensions(dimensions: &str) -> Result<Dimensions, &str> {
-        let d: Vec<&str> = dimensions.split("x").collect();
-        if let [width, height] = d[..] {
-            return Ok(Dimensions {
-                width: width.parse::<usize>().expect("Invalid width!"),
-                height: height.parse::<usize>().expect("Invalid height!"),
-            });
-        }
-        Err("Invalid dimensions!")
-    }
-}
+static START: Once = Once::new();
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -109,39 +85,6 @@ fn main() {
     let cpu_count = num_cpus::get();
     println!("Number of cpus: {}", cpu_count);
 
-    // let tasks: Vec<JoinHandle<()>> = selected_files
-    // .iter()
-    // .map(|file| {
-    // let file = file.clone();
-    // let in_dir = in_dir.clone();
-    // let out_dir = out_dir.clone();
-    // let dims = dims.clone();
-    // thread::spawn(move || {
-    // let mut wand = MagickWand::new();
-    // if let Some(file_name) = file.to_str() {
-    // match shrink(
-    // &mut wand,
-    // file_name,
-    // in_dir,
-    // out_dir,
-    // &dims,
-    // compression_quality,
-    // apply_gaussian_blur.clone(),
-    // ) {
-    // Ok(()) => (),
-    // Err(err) => eprintln!("Failed to shrink file {}! : {}", file_name, err),
-    // };
-    // }
-    // })
-    // }) // .collect();
-    // for (i, task) in tasks.into_iter().enumerate() {
-    // println!("=> {}%", ((i as f32 / file_count as f32) * 100.0).floor(),);
-    // match task.join() {
-    // Ok(_) => eprintln!("Done"),
-    // Err(err) => println!("{:?}", err),
-    // };
-    // }
-
     let in_dir = Arc::new(in_dir);
     let out_dir = Arc::new(out_dir);
     let dims = Arc::new(dims);
@@ -172,69 +115,4 @@ fn main() {
             }
         });
     }
-}
-
-fn shrink(
-    file_name: &str,
-    in_dir: Arc<String>,
-    out_dir: Arc<String>,
-    dims: Arc<Option<Dimensions>>,
-    compression_quality: usize,
-    apply_gaussian_blur: bool,
-) -> Result<(), MagickError> {
-    let mut wand = MagickWand::new();
-    wand.read_image(format!("{in_dir}/{file_name}").as_str())?;
-
-    // Credit: https://stackoverflow.com/questions/48471607/how-to-match-on-an-option-inside-an-arc
-    // if let Some(ref d) = *dims {
-    // wand.fit(d.width, d.height);
-    // }
-    if let Some(d) = Option::as_ref(&dims) {
-        wand.fit(d.width, d.height);
-    }
-
-    wand.set_sampling_factors(&[4.0, 2.0, 0.0])?;
-    wand.strip_image()?;
-    wand.set_image_compression_quality(compression_quality)?;
-    // 3 = Plane (build.rs)
-    wand.set_interlace_scheme(3)?;
-    // 26 should be RGB (have to build magick_rust myself to verify)
-    // wand.set_image_colorspace(30)?;
-
-    if apply_gaussian_blur {
-        // Pretty slow
-        wand.gaussian_blur_image(0.05, 1.0)?
-    }
-
-    let new_file = format!("{}/sm_{}", out_dir, file_name);
-    wand.write_image(new_file.as_str())
-}
-
-fn create_dir_if_not_exists(dir: &str) -> io::Result<()> {
-    fs::create_dir(dir)?;
-    Ok(())
-}
-
-fn parse_file(file_sel: &str, file_name: &str) -> bool {
-    match Regex::new(file_sel) {
-        Ok(reg) => reg.is_match(&format!(r"{file_name}")),
-        Err(err) => {
-            eprintln!("Failed to parse regular expression! {err}");
-            false
-        }
-    }
-}
-
-fn list_files(path: &str) -> io::Result<Vec<OsString>> {
-    let entries = fs::read_dir(path)?
-        .filter_map(|res| match res {
-            Ok(e) => Some(e.file_name()),
-            Err(err) => {
-                eprintln!("Failed to read file! {err}");
-                None
-            }
-        })
-        .collect::<Vec<_>>();
-
-    Ok(entries)
 }
