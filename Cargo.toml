@@ -11,3 +11,5 @@ magick_rust = "0.16.0"
 regex = "1"
 clap = { version = "3.1.8", features = ["derive"] }
 num_cpus = "1.0"
+eframe = "0.17.0"
+rfd = "0.8.2"
