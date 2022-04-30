@@ -1,223 +1,38 @@
-// #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
+//use clap::Parser;
+use eframe::epaint::Vec2;
+use rshrink::gui::RshrinkApp;
+//use std::fmt::Debug;
+//
+//static DEFAULT_REGEX: &str = r".*.(jpg|png|jpeg|JPG|PNG|JPEG)$";
+//static DEFAULT_IN_DIR: &str = ".";
+//static DEFAULT_OUT_DIR: &str = "_rshrinked";
 
-use clap::Parser;
-use eframe::egui::{
-    CentralPanel, Context, DroppedFile, Grid, Layout, RichText, ScrollArea, TopBottomPanel, Ui,
-};
-use eframe::epaint::{Pos2, Rect, Vec2};
-use eframe::{egui, epi};
-use magick_rust::magick_wand_genesis;
-use regex::Regex;
-use rshrink::filesystem::{create_dir_if_not_exists, filter_files, list_files};
-use rshrink::imagemagick::shrink;
-use rshrink::{threadpool::ThreadPool, utils::Dimensions};
-use std::fmt::Debug;
-use std::fs::{self, File};
-use std::path::PathBuf;
-use std::sync::{Arc, Once};
-
-static DEFAULT_REGEX: &str = r".*.(jpg|png|jpeg|JPG|PNG|JPEG)$";
-static DEFAULT_IN_DIR: &str = ".";
-static DEFAULT_OUT_DIR: &str = "_rshrinked";
-static START: Once = Once::new();
-
-const PADDING: f32 = 5.0;
 const MIN_WIN_SIZE: Option<Vec2> = Some(Vec2::new(300.0, 300.0));
 
-#[derive(Parser, Debug)]
-#[clap(author, version, about, long_about = None)]
-struct Args {
-    #[clap(short, long)]
-    dimensions: Option<String>,
-
-    #[clap(short, long)]
-    gaussian_blur: Option<bool>,
-
-    #[clap(short, long, default_value = "85")]
-    compression_quality: usize,
-
-    #[clap(default_value = DEFAULT_REGEX)]
-    files: String,
-
-    #[clap(default_value = DEFAULT_IN_DIR)]
-    in_dir: String,
-
-    #[clap(default_value = DEFAULT_OUT_DIR)]
-    out_dir: String,
-}
-
-#[derive(Default)]
-struct RshrinkApp {
-    selected_files: Vec<String>,
-}
-
-impl RshrinkApp {
-    fn render_controls(self: &mut Self, ui: &mut Ui) {
-        ui.horizontal(|ui| {
-            if self.selected_files.len() > 0 && ui.button("Clear files").clicked() {
-                self.selected_files.clear();
-            };
-            if ui.button("Select files").clicked() {
-                if let Some(file_paths) = rfd::FileDialog::new().pick_files() {
-                    self.selected_files = file_paths
-                        .iter()
-                        .map(|path_buf| path_buf.display().to_string())
-                        .collect::<Vec<_>>();
-                }
-            };
-        });
-    }
-    fn render_main(
-        self: &mut Self,
-        ui: &mut Ui,
-        total_file_size: &mut u64,
-        last_folder: &mut String,
-    ) {
-        if !self.selected_files.is_empty() {
-            ScrollArea::vertical().show(ui, |ui| {
-                let mut files_to_remove_indexes = Vec::new();
-                for (i, file_path) in self.selected_files.iter().enumerate() {
-                    let remove_file = render_file(ui, &file_path, total_file_size, last_folder);
-                    if remove_file {
-                        files_to_remove_indexes.push(i);
-                    }
-                }
-                for i in files_to_remove_indexes {
-                    self.selected_files.remove(i);
-                }
-            });
-        } else {
-            ui.centered_and_justified(|ui| {
-                ui.label("Select files or drop them here");
-            });
-        }
-    }
-}
-fn render_file(
-    // self: &mut Self,
-    ui: &mut Ui,
-    file_path: &String,
-    total_file_size: &mut u64,
-    _last_folder: &mut String,
-) -> bool {
-    let file = File::open(&file_path).unwrap();
-    let file_size = File::metadata(&file).unwrap().len();
-    *total_file_size += file_size;
-
-    let file_path_vec: Vec<&str> = file_path.split("/").collect();
-    let count = file_path_vec.len();
-
-    let mut remove_file = false;
-    ui.horizontal(|ui| {
-        ui.label(RichText::new(file_path_vec[count - 1]).strong())
-            .on_hover_text_at_pointer(file_path);
-        ui.with_layout(Layout::right_to_left(), |ui| {
-            if ui.button("Deselect").clicked() {
-                remove_file = true
-            };
-            ui.label(format!("{file_size} bytes"));
-        });
-    });
-    ui.separator();
-    remove_file
-}
-
-fn render_header(ui: &mut Ui) {
-    ui.vertical_centered(|ui| ui.heading("Rshrink"));
-    ui.separator();
-}
-
-fn render_footer(ctx: &Context, total_file_size: u64) {
-    TopBottomPanel::bottom("footer").show(ctx, |ui| {
-        ui.vertical_centered(|ui| {
-            ui.add_space(PADDING);
-            ui.label(format!("Total file size: {} Kb", total_file_size / 1024));
-            ui.add_space(PADDING);
-        });
-    });
-}
-
-impl epi::App for RshrinkApp {
-    fn name(&self) -> &str {
-        "Rshrink file compression"
-    }
-
-    fn update(&mut self, ctx: &egui::Context, _frame: &epi::Frame) {
-        let mut total_file_size = 0;
-        let mut last_folder = String::new();
-        // Footer (first, because of CentralPanel filling the remaininng space)
-        render_footer(ctx, total_file_size);
-        CentralPanel::default().show(ctx, |ui| {
-            // Header
-            render_header(ui);
-            // Controls
-            self.render_controls(ui);
-            ui.separator();
-            // Files to shrink
-            self.render_main(ui, &mut total_file_size, &mut last_folder);
-        });
-        self.detect_files_being_dropped(ctx);
-    }
-}
-
-impl RshrinkApp {
-    fn detect_files_being_dropped(&mut self, ctx: &egui::Context) {
-        use egui::*;
-
-        // Preview hovering files:
-        if !ctx.input().raw.hovered_files.is_empty() {
-            let mut text = "Dropping files:\n".to_owned();
-            for file in &ctx.input().raw.hovered_files {
-                if let Some(path) = &file.path {
-                    text += &format!("\n{}", path.display());
-                } else if !file.mime.is_empty() {
-                    text += &format!("\n{}", file.mime);
-                } else {
-                    text += "\n???"
-                }
-            }
-            let painter =
-                ctx.layer_painter(LayerId::new(Order::Foreground, Id::new("file_drop_target")));
-
-            let screen_rect = ctx.input().screen_rect();
-            painter.rect_filled(screen_rect, 0.0, Color32::from_black_alpha(192));
-            painter.text(
-                screen_rect.center(),
-                Align2::CENTER_CENTER,
-                text,
-                TextStyle::Heading.resolve(&ctx.style()),
-                Color32::WHITE,
-            );
-        }
-
-        // Collect dropped files:
-        if !ctx.input().raw.dropped_files.is_empty() {
-            self.selected_files = ctx
-                .input()
-                .raw
-                .dropped_files
-                .iter()
-                .filter(|dropped_file| match &dropped_file.path {
-                    Some(file) => {
-                        let regex = Regex::new(DEFAULT_REGEX);
-                        match regex {
-                            Ok(regex) => regex.is_match(&file.display().to_string()),
-                            Err(_) => false,
-                        }
-                    }
-                    None => false,
-                })
-                .map(|dropped_file| match &dropped_file.path {
-                    Some(file_path) => file_path.display().to_string(),
-                    None => "???".to_owned(),
-                })
-                .collect::<_>();
-        }
-    }
-}
+//#[derive(Parser, Debug)]
+//#[clap(author, version, about, long_about = None)]
+//struct Args {
+//    #[clap(short, long)]
+//    dimensions: Option<String>,
+//
+//    #[clap(short, long)]
+//    gaussian_blur: Option<bool>,
+//
+//    #[clap(short, long, default_value = "85")]
+//    compression_quality: usize,
+//
+//    #[clap(default_value = DEFAULT_REGEX)]
+//    files: String,
+//
+//    #[clap(default_value = DEFAULT_IN_DIR)]
+//    in_dir: String,
+//
+//    #[clap(default_value = DEFAULT_OUT_DIR)]
+//    out_dir: String,
+//}
 
 fn main() {
-    let app = RshrinkApp::default();
+    let app = RshrinkApp::new();
     let mut native_options = eframe::NativeOptions::default();
     native_options.min_window_size = MIN_WIN_SIZE;
     eframe::run_native(Box::new(app), native_options);

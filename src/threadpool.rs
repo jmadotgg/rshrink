@@ -9,6 +9,18 @@ pub struct ThreadPool {
     sender: mpsc::Sender<Message>,
 }
 
+impl Default for ThreadPool {
+    fn default() -> Self {
+        Self {
+            workers: Default::default(),
+            sender: {
+                let (sender, _) = mpsc::channel();
+                sender
+            },
+        }
+    }
+}
+
 // Type alias for a trait object that holds the type of closure that execute receives
 type Job = Box<dyn FnOnce() + Send + 'static>;
 
@@ -106,7 +118,7 @@ struct Worker {
 }
 
 impl Worker {
-    fn new(_: usize, receiver: Arc<Mutex<mpsc::Receiver<Message>>>) -> Worker {
+    fn new(_id: usize, receiver: Arc<Mutex<mpsc::Receiver<Message>>>) -> Worker {
         let thread = thread::spawn(move || loop {
             let message = receiver.lock().unwrap().recv().unwrap();
 
@@ -123,7 +135,7 @@ impl Worker {
                 }
             }
 
-            // Call lock on the receiver to acquire the mutex, and the nwe call unwrap to panic on
+            // Call lock on the receiver to acquire the mutex, and the we call unwrap to panic on
             // any errors. Acquiring a lock might fail if the mutex is poisoned state, which can
             // happen if some other thread panicked while holding the lock reather than releasing
             // the lock. In this situation, calling unwrap to have this thread panic is the correct

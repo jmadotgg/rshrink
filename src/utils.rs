@@ -3,6 +3,16 @@ pub struct Dimensions {
     pub width: usize,
     pub height: usize,
 }
+
+impl Default for Dimensions {
+    fn default() -> Self {
+        Dimensions {
+            width: 1920,
+            height: 1080,
+        }
+    }
+}
+
 impl Dimensions {
     pub fn new(width: usize, height: usize) -> Dimensions {
         Dimensions { width, height }
