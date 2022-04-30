@@ -74,7 +74,7 @@ impl RshrinkApp {
     ) {
         if !self.selected_files.is_empty() {
             ScrollArea::vertical()
-                .auto_shrink([false, true])
+                // .auto_shrink([false, true])
                 .show(ui, |ui| {
                     let mut files_to_remove_indexes = Vec::new();
                     for (i, file_path) in self.selected_files.iter().enumerate() {
@@ -92,7 +92,6 @@ impl RshrinkApp {
                 ui.label("Select files or drop them here");
             });
         }
-        ui.add_space(10.);
     }
 }
 fn render_file(
@@ -131,9 +130,11 @@ fn render_header(ui: &mut Ui) {
 
 fn render_footer(ctx: &Context, total_file_size: u64) {
     TopBottomPanel::bottom("footer").show(ctx, |ui| {
-        ui.add_space(PADDING);
-        ui.label(format!("Total file size: {} Kb", total_file_size / 1024));
-        ui.add_space(PADDING);
+        ui.vertical_centered(|ui| {
+            ui.add_space(PADDING);
+            ui.label(format!("Total file size: {} Kb", total_file_size / 1024));
+            ui.add_space(PADDING);
+        });
     });
 }
 
@@ -145,6 +146,8 @@ impl epi::App for RshrinkApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &epi::Frame) {
         let mut total_file_size = 0;
         let mut last_folder = String::new();
+        // Footer (first, because of CentralPanel filling the remaininng space)
+        render_footer(ctx, total_file_size);
         CentralPanel::default().show(ctx, |ui| {
             // Header
             render_header(ui);
@@ -153,9 +156,6 @@ impl epi::App for RshrinkApp {
             ui.separator();
             // Files to shrink
             self.render_main(ui, &mut total_file_size, &mut last_folder);
-            ui.add_space(10.);
-            // Footer
-            render_footer(ctx, total_file_size);
         });
         self.detect_files_being_dropped(ctx);
     }
