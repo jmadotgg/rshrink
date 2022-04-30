@@ -55,6 +55,7 @@ impl SelectedFile {
 }
 pub struct RshrinkApp {
     selected_files: Vec<SelectedFile>,
+    total_file_size: u64,
     file_dimensions: Dimensions,
     thread_pool: ThreadPool,
     receiver: Option<Receiver<usize>>,
@@ -81,7 +82,6 @@ impl epi::App for RshrinkApp {
     }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &epi::Frame) {
-        let mut total_file_size = 0;
         let mut last_folder = String::new();
         if let Some(receiver) = &self.receiver {
             if let Ok(i) = receiver.recv() {
@@ -89,7 +89,7 @@ impl epi::App for RshrinkApp {
             }
         }
         // Footer (first, because of CentralPanel filling the remaininng space)
-        render_footer(ctx, total_file_size, self.selected_files.len());
+        render_footer(ctx, self.total_file_size, self.selected_files.len());
         CentralPanel::default().show(ctx, |ui| {
             // Header
             render_header(ui);
@@ -97,7 +97,7 @@ impl epi::App for RshrinkApp {
             self.render_controls(ui);
             ui.separator();
             // Files to shrink
-            self.render_main(ui, &mut total_file_size, &mut last_folder);
+            self.render_main(ui, &mut last_folder);
         });
         self.detect_files_being_dropped(ctx);
     }
@@ -106,6 +106,7 @@ impl RshrinkApp {
     pub fn new() -> Self {
         Self {
             selected_files: Default::default(),
+            total_file_size: 0,
             file_dimensions: Default::default(),
             thread_pool: Default::default(),
             receiver: None,
@@ -118,9 +119,15 @@ impl RshrinkApp {
             };
             if ui.button("Select files").clicked() {
                 if let Some(file_paths) = rfd::FileDialog::new().pick_files() {
+                    // Manually reset old total file size
+                    self.total_file_size = 0;
                     self.selected_files = file_paths
                         .iter()
-                        .map(|path_buf| SelectedFile::new(path_buf.display().to_string()))
+                        .map(|path_buf| {
+                            let selected_file = SelectedFile::new(path_buf.display().to_string());
+                            self.total_file_size += selected_file.size;
+                            selected_file
+                        })
                         .collect::<Vec<_>>();
                 }
             };
@@ -129,19 +136,16 @@ impl RshrinkApp {
             }
         });
     }
-    pub fn render_main(
-        self: &mut Self,
-        ui: &mut Ui,
-        total_file_size: &mut u64,
-        last_folder: &mut String,
-    ) {
+    pub fn render_main(self: &mut Self, ui: &mut Ui, last_folder: &mut String) {
         if !self.selected_files.is_empty() {
             ScrollArea::vertical().show(ui, |ui| {
                 let mut files_to_remove_indexes = Vec::new();
-                for (i, file_path) in self.selected_files.iter().enumerate() {
-                    let remove_file = render_file(ui, &file_path, total_file_size, last_folder);
+                for (i, selected_file) in self.selected_files.iter().enumerate() {
+                    let remove_file = render_file(ui, selected_file, last_folder);
                     if remove_file {
                         files_to_remove_indexes.push(i);
+                        // Decrease total file size manually
+                        self.total_file_size -= selected_file.size;
                     }
                 }
                 for i in files_to_remove_indexes {
@@ -156,15 +160,7 @@ impl RshrinkApp {
     }
 
     pub fn detect_files_being_dropped(&mut self, ctx: &egui::Context) {
-        // Preview hovering files:
         if !ctx.input().raw.hovered_files.is_empty() {
-            let mut text = "Dropping files:\n".to_owned();
-            for file in &ctx.input().raw.hovered_files {
-                if let Some(path) = &file.path {
-                    text += &format!("\n{}", path.display());
-                    text += "\n???"
-                }
-            }
             let painter =
                 ctx.layer_painter(LayerId::new(Order::Foreground, Id::new("file_drop_target")));
 
@@ -173,14 +169,15 @@ impl RshrinkApp {
             painter.text(
                 screen_rect.center(),
                 Align2::CENTER_CENTER,
-                text,
+                format!("Drop {} files here", &ctx.input().raw.hovered_files.len()),
                 TextStyle::Heading.resolve(&ctx.style()),
                 Color32::WHITE,
             );
         }
-
-        // Collect dropped files:
+        // Collect dropped files
         if !ctx.input().raw.dropped_files.is_empty() {
+            // Manually reset old total file size
+            self.total_file_size = 0;
             self.selected_files = ctx
                 .input()
                 .raw
@@ -197,7 +194,11 @@ impl RshrinkApp {
                     None => false,
                 })
                 .map(|dropped_file| match &dropped_file.path {
-                    Some(file_path) => SelectedFile::new(file_path.display().to_string()),
+                    Some(file_path) => {
+                        let selected_file = SelectedFile::new(file_path.display().to_string());
+                        self.total_file_size += selected_file.size;
+                        selected_file
+                    }
                     None => SelectedFile::new("???".to_owned()),
                 })
                 .collect::<_>();
@@ -235,14 +236,7 @@ impl RshrinkApp {
     }
 }
 
-fn render_file(
-    ui: &mut Ui,
-    selected_file: &SelectedFile,
-    total_file_size: &mut u64,
-    _last_folder: &mut String,
-) -> bool {
-    *total_file_size += selected_file.size;
-
+fn render_file(ui: &mut Ui, selected_file: &SelectedFile, _last_folder: &mut String) -> bool {
     let mut remove_file = false;
     ui.horizontal(|ui| {
         ui.label(RichText::new(&selected_file.name).strong())
