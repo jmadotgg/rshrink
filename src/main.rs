@@ -22,6 +22,7 @@ static DEFAULT_OUT_DIR: &str = "_rshrinked";
 static START: Once = Once::new();
 
 const PADDING: f32 = 5.0;
+const MIN_WIN_SIZE: Option<Vec2> = Some(Vec2::new(300.0, 300.0));
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -73,20 +74,18 @@ impl RshrinkApp {
         last_folder: &mut String,
     ) {
         if !self.selected_files.is_empty() {
-            ScrollArea::vertical()
-                // .auto_shrink([false, true])
-                .show(ui, |ui| {
-                    let mut files_to_remove_indexes = Vec::new();
-                    for (i, file_path) in self.selected_files.iter().enumerate() {
-                        let remove_file = render_file(ui, &file_path, total_file_size, last_folder);
-                        if remove_file {
-                            files_to_remove_indexes.push(i);
-                        }
+            ScrollArea::vertical().show(ui, |ui| {
+                let mut files_to_remove_indexes = Vec::new();
+                for (i, file_path) in self.selected_files.iter().enumerate() {
+                    let remove_file = render_file(ui, &file_path, total_file_size, last_folder);
+                    if remove_file {
+                        files_to_remove_indexes.push(i);
                     }
-                    for i in files_to_remove_indexes {
-                        self.selected_files.remove(i);
-                    }
-                });
+                }
+                for i in files_to_remove_indexes {
+                    self.selected_files.remove(i);
+                }
+            });
         } else {
             ui.centered_and_justified(|ui| {
                 ui.label("Select files or drop them here");
@@ -219,7 +218,8 @@ impl RshrinkApp {
 
 fn main() {
     let app = RshrinkApp::default();
-    let native_options = eframe::NativeOptions::default();
+    let mut native_options = eframe::NativeOptions::default();
+    native_options.min_window_size = MIN_WIN_SIZE;
     eframe::run_native(Box::new(app), native_options);
     //    let Args {
     //        in_dir,
