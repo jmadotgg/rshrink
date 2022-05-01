@@ -1,7 +1,7 @@
 use eframe::{
     egui::{
-        self, CentralPanel, Context, Id, LayerId, Layout, Order, RichText, ScrollArea, TextStyle,
-        TopBottomPanel, Ui, Visuals,
+        self, CentralPanel, Context, Id, LayerId, Layout, Order, RichText, ScrollArea, Spinner,
+        TextStyle, TopBottomPanel, Ui, Visuals, Widget,
     },
     emath::Align2,
     epaint::Color32,
@@ -12,7 +12,7 @@ use regex::Regex;
 use std::{
     fs::File,
     sync::{
-        mpsc::{self, Receiver},
+        atomic::{AtomicBool, Ordering},
         Arc, Once,
     },
 };
@@ -33,7 +33,32 @@ struct SelectedFile {
     parent_folder: String,
     name: String,
     size: u64,
-    done: bool,
+    done: Arc<AtomicBool>,
+}
+
+enum Run {
+    Initial(bool),
+    Subsequent(bool),
+}
+impl Default for Run {
+    fn default() -> Run {
+        Run::Initial(false)
+    }
+}
+impl Run {
+    fn run(self: &Self) -> Run {
+        match self {
+            Run::Initial(_) => Run::Initial(true),
+            Run::Subsequent(_) => Run::Subsequent(true),
+        }
+    }
+    fn finish(self: &Self) -> Run {
+        match self {
+            Run::Initial(true) => Run::Subsequent(false),
+            Run::Initial(false) => Run::Initial(false),
+            Run::Subsequent(_) => Run::Subsequent(false),
+        }
+    }
 }
 
 impl SelectedFile {
@@ -49,7 +74,7 @@ impl SelectedFile {
             parent_folder: path_vec[0..count - 1].join("/"),
             name: path_vec[count - 1].to_string(),
             size: file_size,
-            done: false,
+            done: Arc::new(AtomicBool::new(false)),
         }
     }
 }
@@ -59,18 +84,15 @@ pub struct RshrinkApp {
     total_file_size: u64,
     file_dimensions: Dimensions,
     thread_pool: ThreadPool,
-    receiver: Option<Receiver<usize>>,
     light_mode: bool,
+    is_running: bool,
+    // TODO: Implement everywhere
+    // is_running: Run,
 }
 
 impl App for RshrinkApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut Frame) {
         let mut last_folder = String::new();
-        if let Some(receiver) = &self.receiver {
-            if let Ok(i) = receiver.recv() {
-                self.selected_files[i].done = true;
-            }
-        }
         // Footer (first, because of CentralPanel filling the remaininng space)
         render_footer(ctx, self.total_file_size, self.selected_files.len());
         CentralPanel::default().show(ctx, |ui| {
@@ -122,7 +144,14 @@ impl RshrinkApp {
                 }
             };
             if self.selected_files.len() > 0 && ui.button("Compress files").clicked() {
-                self.receiver = Some(self.run());
+                // Clean up potential previous run before initializing a new one
+                for selected_file in &self.selected_files {
+                    let done = Arc::clone(&selected_file.done);
+                    done.store(false, Ordering::SeqCst);
+                }
+
+                self.is_running = true;
+                self.run();
             }
             let theme_text = match self.light_mode {
                 true => "Theme dark",
@@ -141,13 +170,23 @@ impl RshrinkApp {
         if !self.selected_files.is_empty() {
             ScrollArea::vertical().show(ui, |ui| {
                 let mut files_to_remove_indexes = Vec::new();
+                // Determine if compression finished
+                let mut all_done = true;
                 for (i, selected_file) in self.selected_files.iter().enumerate() {
-                    let remove_file = render_file(ui, selected_file, last_folder);
-                    if remove_file {
+                    let (done, remove_file) =
+                        render_file(ui, selected_file, self.is_running, last_folder);
+                    // If one file hasn't finished compressing, we don't care anymore
+                    if all_done && !done {
+                        all_done = false
+                    }
+                    if !self.is_running && remove_file {
                         files_to_remove_indexes.push(i);
                         // Decrease total file size manually
                         self.total_file_size -= selected_file.size;
                     }
+                }
+                if all_done {
+                    self.is_running = false;
                 }
                 for i in files_to_remove_indexes {
                     self.selected_files.remove(i);
@@ -206,11 +245,10 @@ impl RshrinkApp {
         }
     }
 
-    fn run(self: &Self) -> Receiver<usize> {
+    fn run(self: &Self) {
         let dims = Arc::new(self.file_dimensions.clone());
         let mut prev_dir = String::new();
-        let (sender, receiver) = mpsc::channel();
-        for (i, selected_file) in self.selected_files.iter().enumerate() {
+        for selected_file in &self.selected_files {
             let selected_file = selected_file.clone();
             let out_dir = format!("{}/{}", selected_file.parent_folder, DEFAULT_OUT_DIR);
             if selected_file.parent_folder != prev_dir {
@@ -220,41 +258,50 @@ impl RshrinkApp {
             }
             let out_file_path = format!("{}/{}", out_dir, selected_file.name);
             let dims = Arc::clone(&dims);
-            let sender = sender.clone();
+            let done = Arc::clone(&selected_file.done);
             self.thread_pool.execute(move || {
-                match perform_magick(&selected_file.path, &out_file_path, dims, 85, false) {
-                    Ok(()) => (),
-                    Err(err) => {
-                        eprintln!("Failed to shrink file {}! : {}", selected_file.path, err)
-                    }
+                if let Err(err) =
+                    perform_magick(&selected_file.path, &out_file_path, dims, 85, false)
+                {
+                    eprintln!("Failed to shrink file {}! : {}", selected_file.path, err)
                 }
-                sender.send(i).unwrap();
+                done.store(true, Ordering::Relaxed);
             });
             prev_dir = selected_file.parent_folder;
         }
-        drop(sender);
-        receiver
     }
 }
 
-fn render_file(ui: &mut Ui, selected_file: &SelectedFile, _last_folder: &mut String) -> bool {
+fn render_file(
+    ui: &mut Ui,
+    selected_file: &SelectedFile,
+    is_running: bool,
+    _last_folder: &mut String,
+) -> (bool, bool) {
     let mut remove_file = false;
+    let done = match is_running {
+        true => selected_file.done.load(Ordering::Relaxed),
+        false => false,
+    };
     ui.horizontal(|ui| {
         ui.label(RichText::new(&selected_file.name).strong())
             .on_hover_text_at_pointer(&selected_file.path);
         ui.with_layout(Layout::right_to_left(), |ui| {
-            if ui.button("Deselect").clicked() {
+            if ui.button("Deselect").clicked() && !is_running {
                 remove_file = true
             };
-            if selected_file.done {
+            // Add label if file has been compressed
+            if done {
                 ui.label("Finished");
                 ui.add_space(5.);
+            } else if is_running {
+                Spinner::default().ui(ui);
             }
             ui.label(format!("{} bytes", selected_file.size));
         });
     });
     ui.separator();
-    remove_file
+    (done, remove_file)
 }
 
 pub fn render_header(ui: &mut Ui) {
