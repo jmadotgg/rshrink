@@ -1,7 +1,7 @@
 use eframe::{
     egui::{
         self, CentralPanel, Context, Id, LayerId, Layout, Order, RichText, ScrollArea, TextStyle,
-        TopBottomPanel, Ui,
+        TopBottomPanel, Ui, Visuals,
     },
     emath::Align2,
     epaint::Color32,
@@ -60,6 +60,7 @@ pub struct RshrinkApp {
     file_dimensions: Dimensions,
     thread_pool: ThreadPool,
     receiver: Option<Receiver<usize>>,
+    light_mode: bool,
 }
 
 impl App for RshrinkApp {
@@ -76,7 +77,7 @@ impl App for RshrinkApp {
             // Header
             render_header(ui);
             // Controls
-            self.render_controls(ui);
+            self.render_controls(ctx, ui);
             ui.separator();
             // Files to shrink
             self.render_main(ui, &mut last_folder);
@@ -85,11 +86,12 @@ impl App for RshrinkApp {
     }
 }
 impl RshrinkApp {
-    pub fn new(_cc: &CreationContext<'_>) -> Self {
+    pub fn new(cc: &CreationContext<'_>) -> Self {
         // Init imagemagick
         START.call_once(|| {
             magick_wand_genesis();
         });
+        cc.egui_ctx.set_visuals(Visuals::dark());
         Self::default()
         // Self {
         // selected_files: Vec::new(),
@@ -100,7 +102,7 @@ impl RshrinkApp {
         // receiver: None,
         // }
     }
-    pub fn render_controls(self: &mut Self, ui: &mut Ui) {
+    pub fn render_controls(self: &mut Self, ctx: &Context, ui: &mut Ui) {
         ui.horizontal(|ui| {
             if self.selected_files.len() > 0 && ui.button("Clear files").clicked() {
                 self.selected_files.clear();
@@ -121,6 +123,17 @@ impl RshrinkApp {
             };
             if self.selected_files.len() > 0 && ui.button("Compress files").clicked() {
                 self.receiver = Some(self.run());
+            }
+            let theme_text = match self.light_mode {
+                true => "Theme dark",
+                false => "Theme light",
+            };
+            if ui.button(theme_text).clicked() {
+                ctx.set_visuals(match self.light_mode {
+                    true => Visuals::dark(),
+                    false => Visuals::light(),
+                });
+                self.light_mode = !self.light_mode;
             }
         });
     }
