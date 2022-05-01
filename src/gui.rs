@@ -5,7 +5,7 @@ use eframe::{
     },
     emath::Align2,
     epaint::Color32,
-    epi,
+    App, CreationContext, Frame,
 };
 use magick_rust::magick_wand_genesis;
 use regex::Regex;
@@ -53,6 +53,7 @@ impl SelectedFile {
         }
     }
 }
+#[derive(Default)]
 pub struct RshrinkApp {
     selected_files: Vec<SelectedFile>,
     total_file_size: u64,
@@ -61,27 +62,8 @@ pub struct RshrinkApp {
     receiver: Option<Receiver<usize>>,
 }
 
-impl epi::App for RshrinkApp {
-    fn name(&self) -> &str {
-        "Rshrink file compression"
-    }
-
-    fn setup(
-        &mut self,
-        _ctx: &egui::Context,
-        _frame: &epi::Frame,
-        _storage: Option<&dyn epi::Storage>,
-    ) {
-        // Fill thread pool
-        let pool = ThreadPool::new(num_cpus::get());
-        self.thread_pool = pool;
-        // Init imagemagick
-        START.call_once(|| {
-            magick_wand_genesis();
-        });
-    }
-
-    fn update(&mut self, ctx: &egui::Context, _frame: &epi::Frame) {
+impl App for RshrinkApp {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut Frame) {
         let mut last_folder = String::new();
         if let Some(receiver) = &self.receiver {
             if let Ok(i) = receiver.recv() {
@@ -103,14 +85,20 @@ impl epi::App for RshrinkApp {
     }
 }
 impl RshrinkApp {
-    pub fn new() -> Self {
-        Self {
-            selected_files: Default::default(),
-            total_file_size: 0,
-            file_dimensions: Default::default(),
-            thread_pool: Default::default(),
-            receiver: None,
-        }
+    pub fn new(_cc: &CreationContext<'_>) -> Self {
+        // Init imagemagick
+        START.call_once(|| {
+            magick_wand_genesis();
+        });
+        Self::default()
+        // Self {
+        // selected_files: Vec::new(),
+        // total_file_size: 0,
+        // file_dimensions: Dimensions::default(),
+        //    // Fill thread pool
+        // thread_pool: ThreadPool::new(num_cpus::get()),
+        // receiver: None,
+        // }
     }
     pub fn render_controls(self: &mut Self, ui: &mut Ui) {
         ui.horizontal(|ui| {

@@ -1,5 +1,5 @@
 //use clap::Parser;
-use eframe::epaint::Vec2;
+use eframe::{epaint::Vec2, NativeOptions};
 use rshrink::gui::RshrinkApp;
 //use std::fmt::Debug;
 //
@@ -32,10 +32,13 @@ const MIN_WIN_SIZE: Option<Vec2> = Some(Vec2::new(300.0, 300.0));
 //}
 
 fn main() {
-    let app = RshrinkApp::new();
-    let mut native_options = eframe::NativeOptions::default();
+    let mut native_options = NativeOptions::default();
     native_options.min_window_size = MIN_WIN_SIZE;
-    eframe::run_native(Box::new(app), native_options);
+    eframe::run_native(
+        "Rshrink",
+        native_options,
+        Box::new(|cc| Box::new(RshrinkApp::new(cc))),
+    );
     //    let Args {
     //        in_dir,
     //        out_dir,

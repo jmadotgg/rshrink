@@ -11,13 +11,7 @@ pub struct ThreadPool {
 
 impl Default for ThreadPool {
     fn default() -> Self {
-        Self {
-            workers: Default::default(),
-            sender: {
-                let (sender, _) = mpsc::channel();
-                sender
-            },
-        }
+        Self::new(num_cpus::get())
     }
 }
 
