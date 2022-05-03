@@ -1,7 +1,7 @@
 use eframe::{
     egui::{
-        self, CentralPanel, Context, Id, LayerId, Layout, Order, RichText, ScrollArea, Spinner,
-        TextStyle, TopBottomPanel, Ui, Visuals, Widget,
+        self, menu, CentralPanel, Context, Id, LayerId, Layout, Order, RichText, ScrollArea,
+        Spinner, TextStyle, TopBottomPanel, Ui, Visuals, Widget,
     },
     emath::Align2,
     epaint::Color32,
@@ -97,6 +97,8 @@ impl App for RshrinkApp {
         // Footer (first, because of CentralPanel filling the remaininng space)
         render_footer(ctx, self.total_file_size, self.selected_files.len());
         CentralPanel::default().show(ctx, |ui| {
+            // Render menu
+            self.render_menu(ui);
             // Header
             render_header(ui);
             // Controls
@@ -125,7 +127,44 @@ impl RshrinkApp {
         // receiver: None,
         // }
     }
-    pub fn render_controls(self: &mut Self, ctx: &Context, ui: &mut Ui) {
+    pub fn render_menu(&mut self, ui: &mut Ui) {
+        menu::bar(ui, |ui| {
+            ui.menu_button("File", |ui| {
+                if ui.button("Option 1").clicked() {
+                    println!("Menu button was clicked");
+                }
+                if ui.button("Option 2").clicked() {
+                    println!("Menu button was clicked");
+                }
+                if ui.button("Option 3").clicked() {
+                    println!("Menu button was clicked");
+                }
+            });
+            ui.menu_button("Edit", |ui| {
+                if ui.button("Option 1").clicked() {
+                    println!("Menu button was clicked");
+                }
+                if ui.button("Option 2").clicked() {
+                    println!("Menu button was clicked");
+                }
+                if ui.button("Option 3").clicked() {
+                    println!("Menu button was clicked");
+                }
+            });
+            ui.menu_button("Tools", |ui| {
+                if ui.button("Option 1").clicked() {
+                    println!("Menu button was clicked");
+                }
+                if ui.button("Option 2").clicked() {
+                    println!("Menu button was clicked");
+                }
+                if ui.button("Option 3").clicked() {
+                    println!("Menu button was clicked");
+                }
+            });
+        });
+    }
+    pub fn render_controls(&mut self, ctx: &Context, ui: &mut Ui) {
         ui.horizontal(|ui| {
             if !self.selected_files.is_empty() && ui.button("Clear files").clicked() {
                 self.selected_files.clear();
@@ -172,7 +211,7 @@ impl RshrinkApp {
             }
         });
     }
-    pub fn render_main(self: &mut Self, ui: &mut Ui, last_folder: &mut String) {
+    pub fn render_main(&mut self, ui: &mut Ui, last_folder: &mut str) {
         if !self.selected_files.is_empty() {
             ScrollArea::vertical().show(ui, |ui| {
                 let mut files_to_remove_indexes = Vec::new();
@@ -256,7 +295,7 @@ impl RshrinkApp {
         }
     }
 
-    fn run(self: &Self) {
+    fn run(&self) {
         let dims = Arc::new(self.file_dimensions.clone());
         let mut prev_dir = String::new();
         for selected_file in &self.selected_files {
@@ -288,7 +327,7 @@ fn render_file(
     selected_file: &SelectedFile,
     is_running: bool,
     has_run_once: bool,
-    _last_folder: &mut String,
+    _last_folder: &mut str,
 ) -> (bool, bool) {
     let mut remove_file = false;
     let done = match is_running {
