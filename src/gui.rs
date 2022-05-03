@@ -36,34 +36,34 @@ struct SelectedFile {
     done: Arc<AtomicBool>,
 }
 
-enum Run {
-    Initial(bool),
-    Subsequent(bool),
-}
-impl Default for Run {
-    fn default() -> Run {
-        Run::Initial(false)
-    }
-}
-impl Run {
-    fn run(self: &Self) -> Run {
-        match self {
-            Run::Initial(_) => Run::Initial(true),
-            Run::Subsequent(_) => Run::Subsequent(true),
-        }
-    }
-    fn finish(self: &Self) -> Run {
-        match self {
-            Run::Initial(true) => Run::Subsequent(false),
-            Run::Initial(false) => Run::Initial(false),
-            Run::Subsequent(_) => Run::Subsequent(false),
-        }
-    }
-}
+//enum Run {
+//    Initial(bool),
+//    Subsequent(bool),
+//}
+//impl Default for Run {
+//    fn default() -> Run {
+//        Run::Initial(false)
+//    }
+//}
+//impl Run {
+//    fn run(self: &Self) -> Run {
+//        match self {
+//            Run::Initial(_) => Run::Initial(true),
+//            Run::Subsequent(_) => Run::Subsequent(true),
+//        }
+//    }
+//    fn finish(self: &Self) -> Run {
+//        match self {
+//            Run::Initial(true) => Run::Subsequent(false),
+//            Run::Initial(false) => Run::Initial(false),
+//            Run::Subsequent(_) => Run::Subsequent(false),
+//        }
+//    }
+//}
 
 impl SelectedFile {
     fn new(path: String) -> SelectedFile {
-        let path_vec = path.split("/").collect::<Vec<_>>();
+        let path_vec = path.split('/').collect::<Vec<_>>();
         let count = path_vec.len();
 
         let file = File::open(&path).expect("Failed to open file");
@@ -86,6 +86,7 @@ pub struct RshrinkApp {
     thread_pool: ThreadPool,
     light_mode: bool,
     is_running: bool,
+    has_run_once: bool,
     // TODO: Implement everywhere
     // is_running: Run,
 }
@@ -126,7 +127,7 @@ impl RshrinkApp {
     }
     pub fn render_controls(self: &mut Self, ctx: &Context, ui: &mut Ui) {
         ui.horizontal(|ui| {
-            if self.selected_files.len() > 0 && ui.button("Clear files").clicked() {
+            if !self.selected_files.is_empty() && ui.button("Clear files").clicked() {
                 self.selected_files.clear();
             };
             if ui.button("Select files").clicked() {
@@ -143,7 +144,7 @@ impl RshrinkApp {
                         .collect::<Vec<_>>();
                 }
             };
-            if self.selected_files.len() > 0 && ui.button("Compress files").clicked() {
+            if !self.selected_files.is_empty() && ui.button("Compress files").clicked() {
                 // Clean up potential previous run before initializing a new one
                 for selected_file in &self.selected_files {
                     let done = Arc::clone(&selected_file.done);
@@ -151,6 +152,11 @@ impl RshrinkApp {
                 }
 
                 self.is_running = true;
+
+                if !self.has_run_once {
+                    self.has_run_once = true;
+                }
+
                 self.run();
             }
             let theme_text = match self.light_mode {
@@ -173,8 +179,13 @@ impl RshrinkApp {
                 // Determine if compression finished
                 let mut all_done = true;
                 for (i, selected_file) in self.selected_files.iter().enumerate() {
-                    let (done, remove_file) =
-                        render_file(ui, selected_file, self.is_running, last_folder);
+                    let (done, remove_file) = render_file(
+                        ui,
+                        selected_file,
+                        self.is_running,
+                        self.has_run_once,
+                        last_folder,
+                    );
                     // If one file hasn't finished compressing, we don't care anymore
                     if all_done && !done {
                         all_done = false
@@ -276,6 +287,7 @@ fn render_file(
     ui: &mut Ui,
     selected_file: &SelectedFile,
     is_running: bool,
+    has_run_once: bool,
     _last_folder: &mut String,
 ) -> (bool, bool) {
     let mut remove_file = false;
@@ -291,7 +303,7 @@ fn render_file(
                 remove_file = true
             };
             // Add label if file has been compressed
-            if done {
+            if done || (has_run_once && !is_running) {
                 ui.label("Finished");
                 ui.add_space(5.);
             } else if is_running {
