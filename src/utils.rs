@@ -1,3 +1,4 @@
+use std::num::ParseIntError;
 #[derive(Debug, Clone)]
 pub struct Dimensions {
     pub width: usize,
@@ -26,5 +27,19 @@ impl Dimensions {
             });
         }
         Err("Invalid dimensions!")
+    }
+
+    pub fn as_string(&self) -> (String, String) {
+        (self.width.to_string(), self.height.to_string())
+    }
+
+    pub fn save_dimensions_from_string(
+        &mut self,
+        dimensions: (String, String),
+    ) -> Result<(), ParseIntError> {
+        let (width, height) = dimensions;
+        self.width = width.parse::<usize>()?;
+        self.height = height.parse::<usize>()?;
+        Ok(())
     }
 }

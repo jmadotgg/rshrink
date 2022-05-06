@@ -1,7 +1,7 @@
 use eframe::{
     egui::{
-        self, menu, CentralPanel, Context, Id, LayerId, Layout, Order, RichText, ScrollArea,
-        Spinner, TextStyle, TopBottomPanel, Ui, Visuals, Widget,
+        self, menu, Button, CentralPanel, Context, Grid, Id, LayerId, Layout, Order, RichText,
+        ScrollArea, Slider, Spinner, TextEdit, TextStyle, TopBottomPanel, Ui, Visuals, Widget,
     },
     emath::Align2,
     epaint::Color32,
@@ -27,6 +27,21 @@ const DEFAULT_OUT_DIR: &str = "_rshrinked";
 const DEFAULT_REGEX: &str = r".*.(jpg|png|jpeg|JPG|PNG|JPEG)$";
 const PADDING: f32 = 5.0;
 
+struct Settings {
+    dimensions: Dimensions,
+    change_dimensions: bool,
+    compression_quality: usize,
+}
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            dimensions: Dimensions::default(),
+            change_dimensions: true,
+            compression_quality: 85,
+        }
+    }
+}
+
 #[derive(Clone)]
 struct SelectedFile {
     path: String,
@@ -35,31 +50,6 @@ struct SelectedFile {
     size: u64,
     done: Arc<AtomicBool>,
 }
-
-//enum Run {
-//    Initial(bool),
-//    Subsequent(bool),
-//}
-//impl Default for Run {
-//    fn default() -> Run {
-//        Run::Initial(false)
-//    }
-//}
-//impl Run {
-//    fn run(self: &Self) -> Run {
-//        match self {
-//            Run::Initial(_) => Run::Initial(true),
-//            Run::Subsequent(_) => Run::Subsequent(true),
-//        }
-//    }
-//    fn finish(self: &Self) -> Run {
-//        match self {
-//            Run::Initial(true) => Run::Subsequent(false),
-//            Run::Initial(false) => Run::Initial(false),
-//            Run::Subsequent(_) => Run::Subsequent(false),
-//        }
-//    }
-//}
 
 impl SelectedFile {
     fn new(path: String) -> SelectedFile {
@@ -82,13 +72,11 @@ impl SelectedFile {
 pub struct RshrinkApp {
     selected_files: Vec<SelectedFile>,
     total_file_size: u64,
-    file_dimensions: Dimensions,
     thread_pool: ThreadPool,
     light_mode: bool,
     is_running: bool,
     has_run_once: bool,
-    // TODO: Implement everywhere
-    // is_running: Run,
+    settings: Settings,
 }
 
 impl App for RshrinkApp {
@@ -98,12 +86,15 @@ impl App for RshrinkApp {
         render_footer(ctx, self.total_file_size, self.selected_files.len());
         CentralPanel::default().show(ctx, |ui| {
             // Render menu
-            self.render_menu(ui);
+            self.render_menu(&ctx, ui);
             // Header
             render_header(ui);
+            ui.add_space(5.0);
             // Controls
-            self.render_controls(ctx, ui);
-            ui.separator();
+            ui.group(|ui| {
+                self.render_controls(ui);
+            });
+            ui.add_space(5.0);
             // Files to shrink
             self.render_main(ui, &mut last_folder);
         });
@@ -118,61 +109,43 @@ impl RshrinkApp {
         });
         cc.egui_ctx.set_visuals(Visuals::dark());
         Self::default()
-        // Self {
-        // selected_files: Vec::new(),
-        // total_file_size: 0,
-        // file_dimensions: Dimensions::default(),
-        //    // Fill thread pool
-        // thread_pool: ThreadPool::new(num_cpus::get()),
-        // receiver: None,
-        // }
     }
-    pub fn render_menu(&mut self, ui: &mut Ui) {
+    pub fn render_menu(&mut self, ctx: &Context, ui: &mut Ui) {
         menu::bar(ui, |ui| {
-            ui.menu_button("File", |ui| {
-                if ui.button("Option 1").clicked() {
-                    println!("Menu button was clicked");
-                }
-                if ui.button("Option 2").clicked() {
-                    println!("Menu button was clicked");
-                }
-                if ui.button("Option 3").clicked() {
-                    println!("Menu button was clicked");
-                }
-            });
-            ui.menu_button("Edit", |ui| {
-                if ui.button("Option 1").clicked() {
-                    println!("Menu button was clicked");
-                }
-                if ui.button("Option 2").clicked() {
-                    println!("Menu button was clicked");
-                }
-                if ui.button("Option 3").clicked() {
-                    println!("Menu button was clicked");
-                }
-            });
-            ui.menu_button("Tools", |ui| {
-                if ui.button("Option 1").clicked() {
-                    println!("Menu button was clicked");
-                }
-                if ui.button("Option 2").clicked() {
-                    println!("Menu button was clicked");
-                }
-                if ui.button("Option 3").clicked() {
-                    println!("Menu button was clicked");
-                }
-            });
+            // TODO: Do something useful here
+            // ui.menu_button("File", |ui| {
+            // if ui.button("Option 1").clicked() {
+            // println!("Menu button was clicked");
+            // }
+            // });
+
+            let theme_text = match self.light_mode {
+                true => "🌙",
+                false => "🔆",
+            };
+            if ui.button(theme_text).clicked() {
+                ctx.set_visuals(match self.light_mode {
+                    true => Visuals::dark(),
+                    false => Visuals::light(),
+                });
+                self.light_mode = !self.light_mode;
+            }
         });
     }
-    pub fn render_controls(&mut self, ctx: &Context, ui: &mut Ui) {
+    pub fn render_controls(&mut self, ui: &mut Ui) {
         ui.horizontal(|ui| {
-            if !self.selected_files.is_empty() && ui.button("Clear files").clicked() {
-                self.selected_files.clear();
-            };
-            if ui.button("Select files").clicked() {
+            // Open file explorer
+            if ui
+                .add_enabled(!self.is_running, Button::new("Select files 📂"))
+                .clicked()
+            {
+                if self.is_running {
+                    unreachable!();
+                }
                 if let Some(file_paths) = rfd::FileDialog::new().pick_files() {
                     // Manually reset old total file size
                     self.total_file_size = 0;
+                    self.has_run_once = false;
                     self.selected_files = file_paths
                         .iter()
                         .map(|path_buf| {
@@ -183,7 +156,24 @@ impl RshrinkApp {
                         .collect::<Vec<_>>();
                 }
             };
-            if !self.selected_files.is_empty() && ui.button("Compress files").clicked() {
+            // Clear files
+            if ui
+                .add_enabled(
+                    !self.is_running && !self.selected_files.is_empty(),
+                    Button::new("Clear all files ❌"),
+                )
+                .clicked()
+            {
+                self.selected_files.clear();
+            };
+            // Run program
+            if ui
+                .add_enabled(
+                    !self.is_running && !self.selected_files.is_empty(),
+                    Button::new("Compress files 🔨"),
+                )
+                .clicked()
+            {
                 // Clean up potential previous run before initializing a new one
                 for selected_file in &self.selected_files {
                     let done = Arc::clone(&selected_file.done);
@@ -198,17 +188,45 @@ impl RshrinkApp {
 
                 self.run();
             }
-            let theme_text = match self.light_mode {
-                true => "Theme dark",
-                false => "Theme light",
-            };
-            if ui.button(theme_text).clicked() {
-                ctx.set_visuals(match self.light_mode {
-                    true => Visuals::dark(),
-                    false => Visuals::light(),
-                });
-                self.light_mode = !self.light_mode;
+            if self.is_running {
+                Spinner::default().ui(ui);
             }
+        });
+        ui.separator();
+        ui.collapsing("Compression settings", |ui| {
+            let (mut width, mut height) = self.settings.dimensions.as_string();
+            // Compression Controls
+            Grid::new("settings_grid")
+                .num_columns(2)
+                .spacing([60.0, 10.0])
+                .max_col_width(100.0)
+                // .striped(true)
+                .show(ui, |ui| {
+                    ui.label("Quality");
+                    ui.add(Slider::new(&mut self.settings.compression_quality, 1..=100));
+                    ui.end_row();
+                    // Resize image or keep originial size
+                    ui.checkbox(&mut self.settings.change_dimensions, "Fit dimensions");
+                    ui.horizontal(|ui| {
+                        ui.add_enabled(
+                            self.settings.change_dimensions,
+                            TextEdit::singleline(&mut width).desired_width(50.0),
+                        );
+                        ui.add_enabled(
+                            self.settings.change_dimensions,
+                            TextEdit::singleline(&mut height).desired_width(50.0),
+                        );
+                    });
+                    ui.end_row();
+                });
+            if let Err(err) = self
+                .settings
+                .dimensions
+                .save_dimensions_from_string((width, height))
+            {
+                eprintln!("Error saving dimensions! {}", err)
+            }
+            // });
         });
     }
     pub fn render_main(&mut self, ui: &mut Ui, last_folder: &mut str) {
@@ -268,6 +286,7 @@ impl RshrinkApp {
         if !ctx.input().raw.dropped_files.is_empty() {
             // Manually reset old total file size
             self.total_file_size = 0;
+            self.has_run_once = false;
             self.selected_files = ctx
                 .input()
                 .raw
@@ -296,7 +315,15 @@ impl RshrinkApp {
     }
 
     fn run(&self) {
-        let dims = Arc::new(self.file_dimensions.clone());
+        let Settings {
+            change_dimensions,
+            dimensions,
+            compression_quality,
+        } = &self.settings;
+        let dims = Arc::new(match change_dimensions {
+            true => Some(dimensions.clone()),
+            false => None,
+        });
         let mut prev_dir = String::new();
         for selected_file in &self.selected_files {
             let selected_file = selected_file.clone();
@@ -308,11 +335,16 @@ impl RshrinkApp {
             }
             let out_file_path = format!("{}/{}", out_dir, selected_file.name);
             let dims = Arc::clone(&dims);
+            let compression_quality = compression_quality.clone();
             let done = Arc::clone(&selected_file.done);
             self.thread_pool.execute(move || {
-                if let Err(err) =
-                    perform_magick(&selected_file.path, &out_file_path, dims, 85, false)
-                {
+                if let Err(err) = perform_magick(
+                    &selected_file.path,
+                    &out_file_path,
+                    dims,
+                    compression_quality,
+                    false,
+                ) {
                     eprintln!("Failed to shrink file {}! : {}", selected_file.path, err)
                 }
                 done.store(true, Ordering::Relaxed);
@@ -338,12 +370,12 @@ fn render_file(
         ui.label(RichText::new(&selected_file.name).strong())
             .on_hover_text_at_pointer(&selected_file.path);
         ui.with_layout(Layout::right_to_left(), |ui| {
-            if ui.button("Deselect").clicked() && !is_running {
+            if ui.add_enabled(!is_running, Button::new("❌")).clicked() {
                 remove_file = true
-            };
+            }
             // Add label if file has been compressed
             if done || (has_run_once && !is_running) {
-                ui.label("Finished");
+                ui.label("Done ✅");
                 ui.add_space(5.);
             } else if is_running {
                 Spinner::default().ui(ui);
@@ -357,7 +389,6 @@ fn render_file(
 
 pub fn render_header(ui: &mut Ui) {
     ui.vertical_centered(|ui| ui.heading("Rshrink"));
-    ui.separator();
 }
 
 pub fn render_footer(ctx: &Context, total_file_size: u64, file_count: usize) {
