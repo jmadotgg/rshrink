@@ -1,9 +1,10 @@
 use eframe::{
     egui::{
-        self, menu, Button, CentralPanel, Context, Grid, Id, LayerId, Layout, Order, RichText,
-        ScrollArea, Slider, Spinner, TextEdit, TextStyle, TopBottomPanel, Ui, Visuals, Widget,
+        self, menu, Button, CentralPanel, Context, Grid, Id, Label, LayerId, Layout, Order,
+        RichText, ScrollArea, Slider, Spinner, TextEdit, TextStyle, TopBottomPanel, Ui, Visuals,
+        Widget, Window,
     },
-    emath::Align2,
+    emath::{Align2, Vec2},
     epaint::Color32,
     App, CreationContext, Frame,
 };
@@ -31,6 +32,9 @@ struct Settings {
     dimensions: Dimensions,
     change_dimensions: bool,
     compression_quality: usize,
+    output_folder_name: String,
+    output_folder_parent_dir_path: Option<String>,
+    output_folder_parent_dir_path_enabled: bool,
 }
 impl Default for Settings {
     fn default() -> Self {
@@ -38,6 +42,10 @@ impl Default for Settings {
             dimensions: Dimensions::default(),
             change_dimensions: true,
             compression_quality: 85,
+            output_folder_name: String::from(DEFAULT_OUT_DIR),
+
+            output_folder_parent_dir_path_enabled: false,
+            output_folder_parent_dir_path: None,
         }
     }
 }
@@ -76,6 +84,7 @@ pub struct RshrinkApp {
     light_mode: bool,
     is_running: bool,
     has_run_once: bool,
+    settings_dialog_opened: bool,
     settings: Settings,
 }
 
@@ -113,11 +122,92 @@ impl RshrinkApp {
     pub fn render_menu(&mut self, ctx: &Context, ui: &mut Ui) {
         menu::bar(ui, |ui| {
             // TODO: Do something useful here
-            // ui.menu_button("File", |ui| {
-            // if ui.button("Option 1").clicked() {
-            // println!("Menu button was clicked");
+            if ui.button("Settings").clicked() {
+                self.settings_dialog_opened = !self.settings_dialog_opened;
+            };
+            // if self.settings_dialog_opened {
+            // let painter =
+            // ctx.layer_painter(LayerId::new(Order::Background, Id::new("file_drop_target")));
+            //
+            // let screen_rect = ctx.input().screen_rect();
+            // painter.rect_filled(screen_rect, 0.0, Color32::from_black_alpha(192));
             // }
-            // });
+
+            // let mut ctx = ctx.clone();
+            // let mut style = (*ctx.style()).clone();
+            // style.visuals.popup_shadow = Shadow {
+            // extrusion: 1000.0,
+            // color: Color32::RED,
+            // };
+            // ctx.set_style(style);
+
+            Window::new("Settings")
+                .open(&mut self.settings_dialog_opened)
+                .resizable(false)
+                .collapsible(false)
+                .title_bar(true)
+                .anchor(Align2::CENTER_CENTER, Vec2::new(0., 0.))
+                // .fixed_size(Vec2::new(300., 300.))
+                .show(&ctx, |ui| {
+                    Grid::new("Settings grid")
+                        .num_columns(2)
+                        .spacing([60., 10.])
+                        .show(ui, |ui| {
+                            ui.checkbox(
+                                &mut self.settings.output_folder_parent_dir_path_enabled,
+                                "Change file directory",
+                            );
+                            if self.settings.output_folder_parent_dir_path == None
+                                && self.settings.output_folder_parent_dir_path_enabled
+                            {
+                                match rfd::FileDialog::new().pick_folder() {
+                                    Some(folder) => match folder.to_str() {
+                                        Some(f) => {
+                                            self.settings.output_folder_parent_dir_path =
+                                                Some(String::from(f));
+                                        }
+                                        None => {
+                                            self.settings.output_folder_parent_dir_path_enabled =
+                                                false
+                                        }
+                                    },
+                                    None => {
+                                        self.settings.output_folder_parent_dir_path_enabled = false
+                                    }
+                                }
+                            } else if !self.settings.output_folder_parent_dir_path_enabled {
+                                self.settings.output_folder_parent_dir_path = None;
+                            }
+                            ui.add(
+                                Label::new(
+                                    RichText::new(
+                                        match &self.settings.output_folder_parent_dir_path {
+                                            Some(path) => {
+                                                format!(
+                                                    "{}/{}",
+                                                    path, self.settings.output_folder_name
+                                                )
+                                            }
+                                            None => String::from(format!(
+                                                "./{}",
+                                                self.settings.output_folder_name
+                                            )),
+                                        },
+                                    )
+                                    .italics(),
+                                )
+                                .wrap(true),
+                            );
+                            ui.end_row();
+                            ui.wrap_text();
+                            ui.label(RichText::new("Output folder name"));
+                            ui.add(
+                                TextEdit::singleline(&mut self.settings.output_folder_name)
+                                    .hint_text("Same folder with \"min-\" prefix"),
+                            );
+                            ui.end_row();
+                        })
+                });
 
             let theme_text = match self.light_mode {
                 true => "🌙",
@@ -139,9 +229,6 @@ impl RshrinkApp {
                 .add_enabled(!self.is_running, Button::new("Select files 📂"))
                 .clicked()
             {
-                if self.is_running {
-                    unreachable!();
-                }
                 if let Some(file_paths) = rfd::FileDialog::new().pick_files() {
                     // Manually reset old total file size
                     self.total_file_size = 0;
@@ -196,7 +283,7 @@ impl RshrinkApp {
         ui.collapsing("Compression settings", |ui| {
             let (mut width, mut height) = self.settings.dimensions.as_string();
             // Compression Controls
-            Grid::new("settings_grid")
+            Grid::new("compression_settings_grid")
                 .num_columns(2)
                 .spacing([60.0, 10.0])
                 .max_col_width(100.0)
@@ -236,6 +323,10 @@ impl RshrinkApp {
                 // Determine if compression finished
                 let mut all_done = true;
                 for (i, selected_file) in self.selected_files.iter().enumerate() {
+                    // For coloring columns
+                    // egui::Frame::window(&(*ctx.style()).clone())..show(ui, |ui| {
+                    // ui.label("Label with red background");
+                    // });
                     let (done, remove_file) = render_file(
                         ui,
                         selected_file,
@@ -316,6 +407,9 @@ impl RshrinkApp {
 
     fn run(&self) {
         let Settings {
+            output_folder_parent_dir_path_enabled: _,
+            output_folder_name,
+            output_folder_parent_dir_path,
             change_dimensions,
             dimensions,
             compression_quality,
@@ -327,13 +421,26 @@ impl RshrinkApp {
         let mut prev_dir = String::new();
         for selected_file in &self.selected_files {
             let selected_file = selected_file.clone();
-            let out_dir = format!("{}/{}", selected_file.parent_folder, DEFAULT_OUT_DIR);
-            if selected_file.parent_folder != prev_dir {
-                if let Err(err) = create_dir_if_not_exists(&out_dir) {
-                    eprintln!("Failed to create directory! {}", err)
+            println!(
+                "{},{:?}",
+                selected_file.parent_folder, output_folder_parent_dir_path
+            );
+            let out_folder = match output_folder_parent_dir_path {
+                Some(path) => format!("{}/{}", path, output_folder_name),
+                None => format!("{}/{}", selected_file.parent_folder, output_folder_name),
+            };
+            if out_folder != prev_dir {
+                if let Err(err) = create_dir_if_not_exists(&out_folder) {
+                    eprintln!("Failed to create folder! {}", err)
                 }
             }
-            let out_file_path = format!("{}/{}", out_dir, selected_file.name);
+            let out_file_path =
+                // Remove "/" at the end
+                match out_folder[..out_folder.len() - 1] == selected_file.parent_folder {
+                    // Results in 2 "/", if output_folder_name is empty, but that shouldn't be a problem
+                    true => format!("{}/min-{}", out_folder, selected_file.name),
+                    false => format!("{}/{}", out_folder, selected_file.name),
+                };
             let dims = Arc::clone(&dims);
             let compression_quality = compression_quality.clone();
             let done = Arc::clone(&selected_file.done);
@@ -349,7 +456,7 @@ impl RshrinkApp {
                 }
                 done.store(true, Ordering::Relaxed);
             });
-            prev_dir = selected_file.parent_folder;
+            prev_dir = out_folder;
         }
     }
 }
