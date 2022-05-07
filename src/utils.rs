@@ -1,4 +1,3 @@
-use std::num::ParseIntError;
 #[derive(Debug, Clone)]
 pub struct Dimensions {
     pub width: usize,
@@ -36,10 +35,16 @@ impl Dimensions {
     pub fn save_dimensions_from_string(
         &mut self,
         dimensions: (String, String),
-    ) -> Result<(), ParseIntError> {
+    ) -> Result<(), &str> {
         let (width, height) = dimensions;
-        self.width = width.parse::<usize>()?;
-        self.height = height.parse::<usize>()?;
-        Ok(())
+        if let (Ok(width), Ok(height)) = (width.parse::<usize>(), height.parse::<usize>()) {
+            if width > 8000 || height > 8000 {
+                return Err("Dimensions to big!");
+            }
+            self.width = width;
+            self.height = height;
+            return Ok(());
+        }
+        Err("Failed to parse dimensions")
     }
 }

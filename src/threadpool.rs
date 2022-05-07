@@ -11,7 +11,9 @@ pub struct ThreadPool {
 
 impl Default for ThreadPool {
     fn default() -> Self {
-        Self::new(num_cpus::get())
+        // Remove one to not block main thread
+        // Self::new(num_cpus::get() - 1)
+        Self::new(num_cpus::get() - 1)
     }
 }
 

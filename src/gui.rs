@@ -359,6 +359,9 @@ impl RshrinkApp {
     }
 
     pub fn detect_files_being_dropped(&mut self, ctx: &egui::Context) {
+        if self.is_running {
+            return ();
+        }
         if !ctx.input().raw.hovered_files.is_empty() {
             let painter =
                 ctx.layer_painter(LayerId::new(Order::Foreground, Id::new("file_drop_target")));
