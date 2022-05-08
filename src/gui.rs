@@ -95,7 +95,7 @@ impl App for RshrinkApp {
         render_footer(ctx, self.total_file_size, self.selected_files.len());
         CentralPanel::default().show(ctx, |ui| {
             // Render menu
-            self.render_menu(&ctx, ui);
+            self.render_menu(ctx, ui);
             // Header
             render_header(ui);
             ui.add_space(5.0);
@@ -188,10 +188,9 @@ impl RshrinkApp {
                                                     path, self.settings.output_folder_name
                                                 )
                                             }
-                                            None => String::from(format!(
-                                                "./{}",
-                                                self.settings.output_folder_name
-                                            )),
+                                            None => {
+                                                format!("./{}", self.settings.output_folder_name)
+                                            }
                                         },
                                     )
                                     .italics(),
@@ -360,7 +359,7 @@ impl RshrinkApp {
 
     pub fn detect_files_being_dropped(&mut self, ctx: &egui::Context) {
         if self.is_running {
-            return ();
+            return;
         }
         if !ctx.input().raw.hovered_files.is_empty() {
             let painter =
@@ -445,7 +444,7 @@ impl RshrinkApp {
                     false => format!("{}/{}", out_folder, selected_file.name),
                 };
             let dims = Arc::clone(&dims);
-            let compression_quality = compression_quality.clone();
+            let compression_quality = *compression_quality;
             let done = Arc::clone(&selected_file.done);
             self.thread_pool.execute(move || {
                 if let Err(err) = perform_magick(
