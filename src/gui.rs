@@ -13,14 +13,16 @@ use regex::Regex;
 use std::{
     fs::File,
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc, Once,
     },
 };
 
 use crate::{
-    filesystem::create_dir_if_not_exists, imagemagick::perform_magick, threadpool::ThreadPool,
-    utils::Dimensions,
+    filesystem::create_dir_if_not_exists,
+    imagemagick::perform_magick,
+    threadpool::ThreadPool,
+    utils::{round_percent, Dimensions},
 };
 
 static START: Once = Once::new();
@@ -51,11 +53,26 @@ impl Default for Settings {
 }
 
 #[derive(Clone)]
+struct FileSize {
+    original: u64,
+    new: Arc<AtomicU64>,
+}
+
+impl FileSize {
+    fn new(original: u64) -> Self {
+        Self {
+            original,
+            new: Arc::new(AtomicU64::new(original)),
+        }
+    }
+}
+
+#[derive(Clone)]
 struct SelectedFile {
     path: String,
     parent_folder: String,
     name: String,
-    size: u64,
+    size: FileSize,
     done: Arc<AtomicBool>,
 }
 
@@ -71,7 +88,7 @@ impl SelectedFile {
             path: path.clone(),
             parent_folder: path_vec[0..count - 1].join("/"),
             name: path_vec[count - 1].to_string(),
-            size: file_size,
+            size: FileSize::new(file_size),
             done: Arc::new(AtomicBool::new(false)),
         }
     }
@@ -80,6 +97,7 @@ impl SelectedFile {
 pub struct RshrinkApp {
     selected_files: Vec<SelectedFile>,
     total_file_size: u64,
+    total_new_file_size: Arc<AtomicU64>,
     thread_pool: ThreadPool,
     light_mode: bool,
     is_running: bool,
@@ -92,7 +110,13 @@ impl App for RshrinkApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut Frame) {
         let mut last_folder = String::new();
         // Footer (first, because of CentralPanel filling the remaininng space)
-        render_footer(ctx, self.total_file_size, self.selected_files.len());
+        render_footer(
+            ctx,
+            self.total_file_size,
+            Arc::clone(&self.total_new_file_size),
+            self.has_run_once,
+            self.selected_files.len(),
+        );
         CentralPanel::default().show(ctx, |ui| {
             // Render menu
             self.render_menu(ctx, ui);
@@ -231,12 +255,14 @@ impl RshrinkApp {
                 if let Some(file_paths) = rfd::FileDialog::new().pick_files() {
                     // Manually reset old total file size
                     self.total_file_size = 0;
+                    self.total_new_file_size
+                        .store(self.total_file_size, Ordering::Relaxed);
                     self.has_run_once = false;
                     self.selected_files = file_paths
                         .iter()
                         .map(|path_buf| {
                             let selected_file = SelectedFile::new(path_buf.display().to_string());
-                            self.total_file_size += selected_file.size;
+                            self.total_file_size += selected_file.size.original;
                             selected_file
                         })
                         .collect::<Vec<_>>();
@@ -251,6 +277,9 @@ impl RshrinkApp {
                 .clicked()
             {
                 self.selected_files.clear();
+                self.has_run_once = false;
+                self.total_file_size = 0;
+                self.total_new_file_size.store(0, Ordering::Relaxed);
             };
             // Run program
             if ui
@@ -340,7 +369,11 @@ impl RshrinkApp {
                     if !self.is_running && remove_file {
                         files_to_remove_indexes.push(i);
                         // Decrease total file size manually
-                        self.total_file_size -= selected_file.size;
+                        self.total_file_size -= selected_file.size.original;
+                        self.total_new_file_size.fetch_sub(
+                            selected_file.size.new.load(Ordering::Relaxed),
+                            Ordering::Relaxed,
+                        );
                     }
                 }
                 if all_done {
@@ -379,6 +412,8 @@ impl RshrinkApp {
         if !ctx.input().raw.dropped_files.is_empty() {
             // Manually reset old total file size
             self.total_file_size = 0;
+            self.total_new_file_size
+                .store(self.total_file_size, Ordering::Relaxed);
             self.has_run_once = false;
             self.selected_files = ctx
                 .input()
@@ -398,7 +433,7 @@ impl RshrinkApp {
                 .map(|dropped_file| match &dropped_file.path {
                     Some(file_path) => {
                         let selected_file = SelectedFile::new(file_path.display().to_string());
-                        self.total_file_size += selected_file.size;
+                        self.total_file_size += selected_file.size.original;
                         selected_file
                     }
                     None => SelectedFile::new("???".to_owned()),
@@ -446,6 +481,12 @@ impl RshrinkApp {
             let dims = Arc::clone(&dims);
             let compression_quality = *compression_quality;
             let done = Arc::clone(&selected_file.done);
+            let new_filesize = Arc::clone(&selected_file.size.new);
+
+            // Reset total file size
+            self.total_new_file_size.store(0, Ordering::Relaxed);
+            let total_new_file_size = Arc::clone(&self.total_new_file_size);
+
             self.thread_pool.execute(move || {
                 if let Err(err) = perform_magick(
                     &selected_file.path,
@@ -455,7 +496,25 @@ impl RshrinkApp {
                     false,
                 ) {
                     eprintln!("Failed to shrink file {}! : {}", selected_file.path, err)
+                } else {
+                    // Read file metadata to determine new file size
+                    match File::open(&out_file_path) {
+                        Ok(file) => match File::metadata(&file) {
+                            Ok(metadata) => {
+                                let file_size = metadata.len();
+                                // Store the indiviual files new size
+                                new_filesize.store(file_size, Ordering::Relaxed);
+                                // Store the overall new file size
+                                total_new_file_size.fetch_add(file_size, Ordering::Relaxed);
+                            }
+                            Err(err) => {
+                                eprintln!("Failed to read the new file's metadata! {}", err)
+                            }
+                        },
+                        Err(err) => eprintln!("Failed to read new file size! {}", err),
+                    }
                 }
+                // Complete the job for the UI
                 done.store(true, Ordering::Relaxed);
             });
             prev_dir = out_folder;
@@ -489,7 +548,13 @@ fn render_file(
             } else if is_running {
                 Spinner::default().ui(ui);
             }
-            ui.label(format!("{} bytes", selected_file.size));
+            ui.label(format!(
+                "{}%",
+                round_percent(
+                    selected_file.size.new.load(Ordering::Relaxed),
+                    selected_file.size.original,
+                )
+            ));
         });
     });
     ui.separator();
@@ -500,15 +565,30 @@ pub fn render_header(ui: &mut Ui) {
     ui.vertical_centered(|ui| ui.heading("Rshrink"));
 }
 
-pub fn render_footer(ctx: &Context, total_file_size: u64, file_count: usize) {
+pub fn render_footer(
+    ctx: &Context,
+    total_file_size: u64,
+    total_new_file_size: Arc<AtomicU64>,
+    has_run_once: bool,
+    file_count: usize,
+) {
     TopBottomPanel::bottom("footer").show(ctx, |ui| {
         ui.vertical_centered(|ui| {
             ui.add_space(PADDING);
             ui.label(format!(
-                "Total file size: {} Kb ({} files)",
+                "Original size: {} Kb ({} files)",
                 total_file_size / 1024,
                 file_count
             ));
+
+            ui.add_enabled(
+                has_run_once,
+                Label::new(format!(
+                    "☞ New size: {} Kb ({}%)",
+                    total_new_file_size.load(Ordering::Relaxed) / 1024,
+                    round_percent(total_new_file_size.load(Ordering::Relaxed), total_file_size)
+                )),
+            );
             ui.add_space(PADDING);
         });
     });

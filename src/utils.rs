@@ -48,3 +48,17 @@ impl Dimensions {
         Err("Failed to parse dimensions")
     }
 }
+
+pub fn round_percent(numerator: u64, denominator: u64) -> f32 {
+    round_digits(numerator as f32, denominator as f32, 100, 2)
+}
+
+pub fn round_digits(
+    numerator: f32,
+    denominator: f32,
+    multiplicator: u8,
+    decimal_places: u8,
+) -> f32 {
+    (((numerator / denominator) * (multiplicator as f32 * (decimal_places * 10) as f32)).round())
+        / (decimal_places * 10) as f32
+}
