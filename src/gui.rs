@@ -145,26 +145,9 @@ impl RshrinkApp {
     }
     pub fn render_menu(&mut self, ctx: &Context, ui: &mut Ui) {
         menu::bar(ui, |ui| {
-            // TODO: Do something useful here
             if ui.button("Settings").clicked() {
                 self.settings_dialog_opened = !self.settings_dialog_opened;
             };
-            // if self.settings_dialog_opened {
-            // let painter =
-            // ctx.layer_painter(LayerId::new(Order::Background, Id::new("file_drop_target")));
-            //
-            // let screen_rect = ctx.input().screen_rect();
-            // painter.rect_filled(screen_rect, 0.0, Color32::from_black_alpha(192));
-            // }
-
-            // let mut ctx = ctx.clone();
-            // let mut style = (*ctx.style()).clone();
-            // style.visuals.popup_shadow = Shadow {
-            // extrusion: 1000.0,
-            // color: Color32::RED,
-            // };
-            // ctx.set_style(style);
-
             Window::new("Settings")
                 .open(&mut self.settings_dialog_opened)
                 .resizable(false)
@@ -172,7 +155,7 @@ impl RshrinkApp {
                 .title_bar(true)
                 .anchor(Align2::CENTER_CENTER, Vec2::new(0., 0.))
                 // .fixed_size(Vec2::new(300., 300.))
-                .show(&ctx, |ui| {
+                .show(ctx, |ui| {
                     Grid::new("Settings grid")
                         .num_columns(2)
                         .spacing([60., 10.])
