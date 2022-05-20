@@ -7,7 +7,9 @@ edition = "2021"
 magick_rust = "0.16.0"
 regex = "1"
 num_cpus = "1.0"
-eframe = "0.18.0"
+eframe = { version = "0.18.0", features = ["persistence"] }
 rfd = "0.8.2"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 # ffmpeg-next = "5.0.3"
 # clap = { version = "3.1.8", features = ["derive"] }

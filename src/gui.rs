@@ -18,6 +18,8 @@ use std::{
     },
 };
 
+use serde::{Deserialize, Serialize};
+
 use crate::{
     filesystem::create_dir_if_not_exists,
     imagemagick::perform_magick,
@@ -30,6 +32,7 @@ const DEFAULT_OUT_DIR: &str = "_rshrinked";
 const DEFAULT_REGEX: &str = r".*.(jpg|png|jpeg|JPG|PNG|JPEG)$";
 const PADDING: f32 = 5.0;
 
+#[derive(Serialize, Deserialize)]
 struct Settings {
     dimensions: Dimensions,
     change_dimensions: bool,
@@ -37,7 +40,9 @@ struct Settings {
     output_folder_name: String,
     output_folder_parent_dir_path: Option<String>,
     output_folder_parent_dir_path_enabled: bool,
+    light_mode: bool,
 }
+
 impl Default for Settings {
     fn default() -> Self {
         Self {
@@ -45,9 +50,9 @@ impl Default for Settings {
             change_dimensions: true,
             compression_quality: 85,
             output_folder_name: String::from(DEFAULT_OUT_DIR),
-
             output_folder_parent_dir_path_enabled: false,
             output_folder_parent_dir_path: None,
+            light_mode: false,
         }
     }
 }
@@ -93,13 +98,13 @@ impl SelectedFile {
         }
     }
 }
+
 #[derive(Default)]
 pub struct RshrinkApp {
     selected_files: Vec<SelectedFile>,
     total_file_size: u64,
     total_new_file_size: Arc<AtomicU64>,
     thread_pool: ThreadPool,
-    light_mode: bool,
     is_running: bool,
     has_run_once: bool,
     settings_dialog_opened: bool,
@@ -133,15 +138,48 @@ impl App for RshrinkApp {
         });
         self.detect_files_being_dropped(ctx);
     }
+
+    fn save(&mut self, storage: &mut dyn eframe::Storage) {
+        if let Ok(settings) = serde_json::to_string(&self.settings) {
+            storage.set_string("settings", settings);
+        }
+    }
 }
+
 impl RshrinkApp {
     pub fn new(cc: &CreationContext<'_>) -> Self {
         // Init imagemagick
         START.call_once(|| {
             magick_wand_genesis();
         });
-        cc.egui_ctx.set_visuals(Visuals::dark());
-        Self::default()
+
+        // Retrieve stored settings from file
+        let mut stored_settings: Option<Settings> = None;
+        if let Some(storage) = cc.storage {
+            if let Some(settings) = storage.get_string("settings") {
+                if let Ok(settings) = serde_json::from_str(&settings) {
+                    stored_settings = Some(settings);
+                }
+            }
+        }
+
+        // Apply stored settings if they exist
+        let settings = match stored_settings {
+            Some(settings) => settings,
+            None => Settings::default(),
+        };
+
+        // Set theme accordingly
+        cc.egui_ctx.set_visuals(match settings.light_mode {
+            false => Visuals::dark(),
+            true => Visuals::light(),
+        });
+
+        // Start with saved settings if they exist
+        Self {
+            settings,
+            ..Default::default()
+        }
     }
     pub fn render_menu(&mut self, ctx: &Context, ui: &mut Ui) {
         menu::bar(ui, |ui| {
@@ -215,16 +253,17 @@ impl RshrinkApp {
                         })
                 });
 
-            let theme_text = match self.light_mode {
+            let Settings { light_mode, .. } = &mut self.settings;
+            let theme_text = match light_mode {
                 true => "🌙",
                 false => "🔆",
             };
             if ui.button(theme_text).clicked() {
-                ctx.set_visuals(match self.light_mode {
+                ctx.set_visuals(match light_mode {
                     true => Visuals::dark(),
                     false => Visuals::light(),
                 });
-                self.light_mode = !self.light_mode;
+                *light_mode = !(*light_mode);
             }
         });
     }
@@ -298,7 +337,6 @@ impl RshrinkApp {
                 .num_columns(2)
                 .spacing([60.0, 10.0])
                 .max_col_width(100.0)
-                // .striped(true)
                 .show(ui, |ui| {
                     ui.label("Quality");
                     ui.add(Slider::new(&mut self.settings.compression_quality, 1..=100));
@@ -324,7 +362,6 @@ impl RshrinkApp {
             {
                 eprintln!("Error saving dimensions! {}", err)
             }
-            // });
         });
     }
     pub fn render_main(&mut self, ui: &mut Ui, last_folder: &mut str) {
@@ -433,6 +470,7 @@ impl RshrinkApp {
             change_dimensions,
             dimensions,
             compression_quality,
+            ..
         } = &self.settings;
         let dims = Arc::new(match change_dimensions {
             true => Some(dimensions.clone()),

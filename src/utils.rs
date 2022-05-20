@@ -1,4 +1,6 @@
-#[derive(Debug, Clone)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Dimensions {
     pub width: usize,
     pub height: usize,
@@ -59,6 +61,9 @@ pub fn round_digits(
     multiplicator: u8,
     decimal_places: u8,
 ) -> f32 {
+    if denominator == 0. {
+        return 0.;
+    }
     (((numerator / denominator) * (multiplicator as f32 * (decimal_places * 10) as f32)).round())
         / (decimal_places * 10) as f32
 }
