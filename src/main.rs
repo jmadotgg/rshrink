@@ -1,3 +1,4 @@
+#![windows_subsystem = "windows"]
 use eframe::{epaint::Vec2, NativeOptions};
 use rshrink::gui::RshrinkApp;
 
