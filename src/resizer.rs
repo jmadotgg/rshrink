@@ -1,15 +1,28 @@
+use std::sync::Arc;
+
 use image::{io::Reader as ImageReader, ColorType, DynamicImage, ImageBuffer, ImageError, Rgb};
 use resize::{Error, Pixel::RGB8, Type};
 use rgb::FromSlice;
 
+use crate::utils::Dimensions;
+
 pub fn shrink_image(
     path: &str,
     dst_path: &str,
-    width: usize,
-    height: usize,
+    dims: Arc<Option<Dimensions>>,
 ) -> Result<(), ImageError> {
     let img = read_image(path)?;
-    let (sw, sh, dw, dh) = (img.width() as usize, img.height() as usize, width, height);
+    let (sw, sh, mut dw, mut dh) = (
+        img.width() as usize,
+        img.height() as usize,
+        img.width() as usize,
+        img.height() as usize,
+    );
+    if let Some(dims) = dims.as_ref() {
+        // TODO: Check if provided dimensions are actually smaller than original dimensions
+        dw = dims.width;
+        dh = dims.height;
+    }
     if let Some(img_buf) = img.as_rgb8() {
         let img_buf_resized = resize(sw, sh, dw, dh, img_buf).expect("Failed to resize image");
         save_image_buffer(dst_path, dw as u32, dh as u32, &img_buf_resized[..])

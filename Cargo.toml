@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-magick_rust = "0.16.0"
+# magick_rust = "0.16.0"
 regex = "1"
 num_cpus = "1.0"
 eframe = { version = "0.18.0", features = ["persistence"] }

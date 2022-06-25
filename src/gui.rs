@@ -8,7 +8,7 @@ use eframe::{
     epaint::Color32,
     App, CreationContext, Frame,
 };
-use magick_rust::magick_wand_genesis;
+// use magick_rust::magick_wand_genesis;
 use regex::Regex;
 use std::{
     fs::File,
@@ -22,7 +22,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     filesystem::create_dir_if_not_exists,
-    imagemagick::perform_magick,
+    // imagemagick::perform_magick,
+    resizer::shrink_image,
     threadpool::ThreadPool,
     utils::{round_percent, Dimensions},
 };
@@ -149,9 +150,9 @@ impl App for RshrinkApp {
 impl RshrinkApp {
     pub fn new(cc: &CreationContext<'_>) -> Self {
         // Init imagemagick
-        START.call_once(|| {
-            magick_wand_genesis();
-        });
+        // START.call_once(|| {
+        // magick_wand_genesis();
+        // });
 
         // Retrieve stored settings from file
         let mut stored_settings: Option<Settings> = None;
@@ -338,9 +339,9 @@ impl RshrinkApp {
                 .spacing([60.0, 10.0])
                 .max_col_width(100.0)
                 .show(ui, |ui| {
-                    ui.label("Quality");
-                    ui.add(Slider::new(&mut self.settings.compression_quality, 1..=100));
-                    ui.end_row();
+                    // ui.label("Quality");
+                    // ui.add(Slider::new(&mut self.settings.compression_quality, 1..=100));
+                    // ui.end_row();
                     // Resize image or keep originial size
                     ui.checkbox(&mut self.settings.change_dimensions, "Fit dimensions");
                     ui.horizontal(|ui| {
@@ -509,13 +510,14 @@ impl RshrinkApp {
             let total_new_file_size = Arc::clone(&self.total_new_file_size);
 
             self.thread_pool.execute(move || {
-                if let Err(err) = perform_magick(
-                    &selected_file.path,
-                    &out_file_path,
-                    dims,
-                    compression_quality,
-                    false,
-                ) {
+                if let Err(err) = shrink_image(&selected_file.path, &out_file_path, dims) {
+                    // if let Err(err) = perform_magick(
+                    // &selected_file.path,
+                    // &out_file_path,
+                    // dims,
+                    // compression_quality,
+                    // false,
+                    // ) {
                     eprintln!("Failed to shrink file {}! : {}", selected_file.path, err)
                 } else {
                     // Read file metadata to determine new file size
