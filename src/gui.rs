@@ -1,8 +1,8 @@
 use eframe::{
     egui::{
         self, menu, Button, CentralPanel, Context, Grid, Id, Label, LayerId, Layout, Order,
-        RichText, ScrollArea, Slider, Spinner, TextEdit, TextStyle, TopBottomPanel, Ui, Visuals,
-        Widget, Window,
+        RichText, ScrollArea, Spinner, TextEdit, TextStyle, TopBottomPanel, Ui, Visuals, Widget,
+        Window,
     },
     emath::{Align2, Vec2},
     epaint::Color32,
@@ -11,10 +11,12 @@ use eframe::{
 // use magick_rust::magick_wand_genesis;
 use regex::Regex;
 use std::{
+    fs,
     fs::File,
+    path::PathBuf,
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
-        Arc, Once,
+        Arc,
     },
 };
 
@@ -28,7 +30,6 @@ use crate::{
     utils::{round_percent, Dimensions},
 };
 
-static START: Once = Once::new();
 const DEFAULT_OUT_DIR: &str = "_rshrinked";
 const DEFAULT_REGEX: &str = r".*.(jpg|png|jpeg|JPG|PNG|JPEG)$";
 const PADDING: f32 = 5.0;
@@ -83,20 +84,22 @@ struct SelectedFile {
 }
 
 impl SelectedFile {
-    fn new(path: String) -> SelectedFile {
-        let path_vec = path.split('/').collect::<Vec<_>>();
-        let count = path_vec.len();
+    fn new(file_path: &PathBuf) -> Option<SelectedFile> {
+        let metadata = match fs::metadata(&file_path) {
+            Ok(data) => data,
+            Err(_) => return None,
+        };
+        let parent_folder = String::from(file_path.parent()?.to_str()?);
+        let file_size = metadata.len();
+        let file_name = String::from(file_path.file_name()?.to_str()?);
 
-        let file = File::open(&path).expect("Failed to open file");
-        let file_size = File::metadata(&file).unwrap().len();
-
-        SelectedFile {
-            path: path.clone(),
-            parent_folder: path_vec[0..count - 1].join("/"),
-            name: path_vec[count - 1].to_string(),
+        Some(SelectedFile {
+            path: file_path.display().to_string(),
+            parent_folder,
+            name: file_name,
             size: FileSize::new(file_size),
             done: Arc::new(AtomicBool::new(false)),
-        }
+        })
     }
 }
 
@@ -284,7 +287,10 @@ impl RshrinkApp {
                     self.selected_files = file_paths
                         .iter()
                         .map(|path_buf| {
-                            let selected_file = SelectedFile::new(path_buf.display().to_string());
+                            let selected_file = SelectedFile::new(path_buf).expect(&format!(
+                                "Failed to read file {}",
+                                path_buf.display().to_string()
+                            ));
                             self.total_file_size += selected_file.size.original;
                             selected_file
                         })
@@ -451,13 +457,17 @@ impl RshrinkApp {
                     }
                     None => false,
                 })
-                .map(|dropped_file| match &dropped_file.path {
-                    Some(file_path) => {
-                        let selected_file = SelectedFile::new(file_path.display().to_string());
-                        self.total_file_size += selected_file.size.original;
-                        selected_file
-                    }
-                    None => SelectedFile::new("???".to_owned()),
+                .map(|dropped_file| {
+                    let path_buf = dropped_file.path.clone().expect(&format!(
+                        "Failed to read dropped file {}",
+                        &dropped_file.name
+                    ));
+                    let selected_file = SelectedFile::new(&path_buf).expect(&format!(
+                        "Failed to read file {}",
+                        path_buf.display().to_string()
+                    ));
+                    self.total_file_size += selected_file.size.original;
+                    selected_file
                 })
                 .collect::<_>();
         }
