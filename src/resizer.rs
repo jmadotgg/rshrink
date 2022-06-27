@@ -4,25 +4,32 @@ use image::{io::Reader as ImageReader, ColorType, DynamicImage, ImageBuffer, Ima
 use resize::{Error, Pixel::RGB8, Type};
 use rgb::FromSlice;
 
-use crate::utils::Dimensions;
+use crate::utils::{Dimensions, Resize};
 
 pub fn shrink_image(
     path: &str,
     dst_path: &str,
-    dims: Arc<Option<Dimensions>>,
+    resize_method: Arc<Resize>,
+    dims: Arc<Dimensions>,
+    dims_relative: u32,
 ) -> Result<(), ImageError> {
     let img = read_image(path)?;
-    let (sw, sh, mut dw, mut dh) = (
-        img.width() as usize,
-        img.height() as usize,
-        img.width() as usize,
-        img.height() as usize,
-    );
-    if let Some(dims) = dims.as_ref() {
-        // TODO: Check if provided dimensions are actually smaller than original dimensions
-        dw = dims.width;
-        dh = dims.height;
+    let (sw, sh) = (img.width() as usize, img.height() as usize);
+
+    // Don't troll me please
+    if sw <= 100 || sh <= 100 {
+        return Ok(());
     }
+
+    // Rust is going to optimize this during compile time, right?
+    // This looks more readable
+    let (dw, dh) = match resize_method.as_ref() {
+        Resize::Absolute => (dims.width, dims.height),
+        Resize::Relative => (
+            (sw as f32 * dims_relative as f32 / 100.) as usize,
+            (sh as f32 * dims_relative as f32 / 100.) as usize,
+        ),
+    };
     if let Some(img_buf) = img.as_rgb8() {
         let img_buf_resized = resize(sw, sh, dw, dh, img_buf).expect("Failed to resize image");
         save_image_buffer(dst_path, dw as u32, dh as u32, &img_buf_resized[..])

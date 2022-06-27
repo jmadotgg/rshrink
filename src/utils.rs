@@ -67,3 +67,9 @@ pub fn round_digits(
     (((numerator / denominator) * (multiplicator as f32 * (decimal_places * 10) as f32)).round())
         / (decimal_places * 10) as f32
 }
+
+#[derive(Serialize, Deserialize, PartialEq, Copy, Clone)]
+pub enum Resize {
+    Absolute,
+    Relative,
+}

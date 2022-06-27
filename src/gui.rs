@@ -1,8 +1,8 @@
 use eframe::{
     egui::{
         self, menu, Button, CentralPanel, Context, Grid, Id, Label, LayerId, Layout, Order,
-        RichText, ScrollArea, Spinner, TextEdit, TextStyle, TopBottomPanel, Ui, Visuals, Widget,
-        Window,
+        RichText, ScrollArea, Slider, Spinner, TextEdit, TextStyle, TopBottomPanel, Ui, Visuals,
+        Widget, Window,
     },
     emath::{Align2, Vec2},
     epaint::Color32,
@@ -27,7 +27,7 @@ use crate::{
     // imagemagick::perform_magick,
     resizer::shrink_image,
     threadpool::ThreadPool,
-    utils::{round_percent, Dimensions},
+    utils::{round_percent, Dimensions, Resize},
 };
 
 const DEFAULT_OUT_DIR: &str = "_rshrinked";
@@ -37,6 +37,8 @@ const PADDING: f32 = 5.0;
 #[derive(Serialize, Deserialize)]
 struct Settings {
     dimensions: Dimensions,
+    resize_method: Resize,
+    dimensions_relative: u32,
     change_dimensions: bool,
     compression_quality: usize,
     output_folder_name: String,
@@ -45,10 +47,17 @@ struct Settings {
     light_mode: bool,
 }
 
+// enum Resize {
+// Absolute(Dimensions),
+// Relative(u32),
+// }
+
 impl Default for Settings {
     fn default() -> Self {
         Self {
             dimensions: Dimensions::default(),
+            resize_method: Resize::Relative,
+            dimensions_relative: 50,
             change_dimensions: true,
             compression_quality: 85,
             output_folder_name: String::from(DEFAULT_OUT_DIR),
@@ -345,21 +354,41 @@ impl RshrinkApp {
                 .spacing([60.0, 10.0])
                 .max_col_width(100.0)
                 .show(ui, |ui| {
-                    // ui.label("Quality");
-                    // ui.add(Slider::new(&mut self.settings.compression_quality, 1..=100));
-                    // ui.end_row();
-                    // Resize image or keep originial size
-                    ui.checkbox(&mut self.settings.change_dimensions, "Fit dimensions");
-                    ui.horizontal(|ui| {
-                        ui.add_enabled(
-                            self.settings.change_dimensions,
-                            TextEdit::singleline(&mut width).desired_width(50.0),
-                        );
-                        ui.add_enabled(
-                            self.settings.change_dimensions,
-                            TextEdit::singleline(&mut height).desired_width(50.0),
-                        );
+                    ui.vertical(|ui| {
+                        ui.label("Resize");
+                        ui.horizontal(|ui| {
+                            ui.radio_value(
+                                &mut self.settings.resize_method,
+                                Resize::Absolute,
+                                "Absolut",
+                            );
+                            ui.add_enabled(
+                                self.settings.resize_method == Resize::Absolute,
+                                TextEdit::singleline(&mut width),
+                            );
+                            ui.label("x");
+                            ui.add_enabled(
+                                self.settings.resize_method == Resize::Absolute,
+                                TextEdit::singleline(&mut height),
+                            );
+                            ui.label("px");
+                        });
+                        ui.horizontal(|ui| {
+                            ui.radio_value(
+                                &mut self.settings.resize_method,
+                                Resize::Relative,
+                                "Relative",
+                            );
+                            ui.add_enabled(
+                                self.settings.resize_method == Resize::Relative,
+                                Slider::new(&mut self.settings.dimensions_relative, 1..=100)
+                                    .suffix('%')
+                                    .text("hello"),
+                            )
+                        });
                     });
+                    ui.end_row();
+                    //Resize image or keep originial size
                     ui.end_row();
                 });
             if let Err(err) = self
@@ -478,40 +507,41 @@ impl RshrinkApp {
             output_folder_parent_dir_path_enabled: _,
             output_folder_name,
             output_folder_parent_dir_path,
-            change_dimensions,
             dimensions,
-            compression_quality,
+            dimensions_relative,
+            resize_method,
             ..
         } = &self.settings;
-        let dims = Arc::new(match change_dimensions {
-            true => Some(dimensions.clone()),
-            false => None,
-        });
-        let mut prev_dir = String::new();
+        let resize_method = Arc::new(resize_method.clone());
+        println!("{}", dimensions_relative);
+        let dims = Arc::new(dimensions.clone());
+        let mut prev_dir = PathBuf::new();
         for selected_file in &self.selected_files {
             let selected_file = selected_file.clone();
-            println!(
-                "{},{:?}",
-                selected_file.parent_folder, output_folder_parent_dir_path
-            );
-            let out_folder = match output_folder_parent_dir_path {
-                Some(path) => format!("{}/{}", path, output_folder_name),
-                None => format!("{}/{}", selected_file.parent_folder, output_folder_name),
-            };
+
+            let mut out_folder = PathBuf::from(match output_folder_parent_dir_path {
+                Some(path) => path,
+                None => &selected_file.parent_folder,
+            });
+            out_folder.push(output_folder_name);
+
             if out_folder != prev_dir {
                 if let Err(err) = create_dir_if_not_exists(&out_folder) {
                     eprintln!("Failed to create folder! {}", err)
                 }
             }
-            let out_file_path =
-                // Remove "/" at the end
-                match out_folder[..out_folder.len() - 1] == selected_file.parent_folder {
-                    // Results in 2 "/", if output_folder_name is empty, but that shouldn't be a problem
-                    true => format!("{}/min-{}", out_folder, selected_file.name),
-                    false => format!("{}/{}", out_folder, selected_file.name),
-                };
+
+            let mut out_file_path = PathBuf::from(&out_folder);
+            out_file_path.push(
+                match out_folder == PathBuf::from(&selected_file.parent_folder) {
+                    true => format!("min-{}", selected_file.name),
+                    false => selected_file.name,
+                },
+            );
+
+            let resize_method = Arc::clone(&resize_method);
             let dims = Arc::clone(&dims);
-            let compression_quality = *compression_quality;
+            let dims_relative = dimensions_relative.clone();
             let done = Arc::clone(&selected_file.done);
             let new_filesize = Arc::clone(&selected_file.size.new);
 
@@ -520,14 +550,13 @@ impl RshrinkApp {
             let total_new_file_size = Arc::clone(&self.total_new_file_size);
 
             self.thread_pool.execute(move || {
-                if let Err(err) = shrink_image(&selected_file.path, &out_file_path, dims) {
-                    // if let Err(err) = perform_magick(
-                    // &selected_file.path,
-                    // &out_file_path,
-                    // dims,
-                    // compression_quality,
-                    // false,
-                    // ) {
+                if let Err(err) = shrink_image(
+                    &selected_file.path,
+                    out_file_path.display().to_string().as_ref(),
+                    resize_method,
+                    dims,
+                    dims_relative,
+                ) {
                     eprintln!("Failed to shrink file {}! : {}", selected_file.path, err)
                 } else {
                     // Read file metadata to determine new file size

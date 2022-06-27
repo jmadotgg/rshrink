@@ -1,8 +1,8 @@
-use std::{ffi::OsString, fs, io};
+use std::{ffi::OsString, fs, io, path::PathBuf};
 
 use regex::Regex;
 
-pub fn create_dir_if_not_exists(dir: &str) -> io::Result<()> {
+pub fn create_dir_if_not_exists(dir: &PathBuf) -> io::Result<()> {
     fs::create_dir(dir)?;
     Ok(())
 }
