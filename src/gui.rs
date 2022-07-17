@@ -360,7 +360,7 @@ impl RshrinkApp {
                             ui.radio_value(
                                 &mut self.settings.resize_method,
                                 Resize::Absolute,
-                                "Absolut",
+                                "Absolute",
                             );
                             ui.add_enabled(
                                 self.settings.resize_method == Resize::Absolute,
@@ -383,7 +383,6 @@ impl RshrinkApp {
                                 self.settings.resize_method == Resize::Relative,
                                 Slider::new(&mut self.settings.dimensions_relative, 1..=100)
                                     .suffix('%')
-                                    .text("hello"),
                             )
                         });
                     });
