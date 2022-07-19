@@ -8,7 +8,7 @@ use eframe::{
     epaint::Color32,
     App, CreationContext, Frame,
 };
-// use magick_rust::magick_wand_genesis;
+
 use regex::Regex;
 use std::{
     fs,
@@ -24,7 +24,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     filesystem::create_dir_if_not_exists,
-    // imagemagick::perform_magick,
     resizer::shrink_image,
     threadpool::ThreadPool,
     utils::{round_percent, Dimensions, Resize},
@@ -46,11 +45,6 @@ struct Settings {
     output_folder_parent_dir_path_enabled: bool,
     light_mode: bool,
 }
-
-// enum Resize {
-// Absolute(Dimensions),
-// Relative(u32),
-// }
 
 impl Default for Settings {
     fn default() -> Self {
@@ -382,7 +376,7 @@ impl RshrinkApp {
                             ui.add_enabled(
                                 self.settings.resize_method == Resize::Relative,
                                 Slider::new(&mut self.settings.dimensions_relative, 1..=100)
-                                    .suffix('%')
+                                    .suffix('%'),
                             )
                         });
                     });
@@ -511,8 +505,7 @@ impl RshrinkApp {
             resize_method,
             ..
         } = &self.settings;
-        let resize_method = Arc::new(resize_method.clone());
-        println!("{}", dimensions_relative);
+        let resize_method = Arc::new(*resize_method);
         let dims = Arc::new(dimensions.clone());
         let mut prev_dir = PathBuf::new();
         for selected_file in &self.selected_files {
@@ -540,7 +533,7 @@ impl RshrinkApp {
 
             let resize_method = Arc::clone(&resize_method);
             let dims = Arc::clone(&dims);
-            let dims_relative = dimensions_relative.clone();
+            let dims_relative = *dimensions_relative;
             let done = Arc::clone(&selected_file.done);
             let new_filesize = Arc::clone(&selected_file.size.new);
 

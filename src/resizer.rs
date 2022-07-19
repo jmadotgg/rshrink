@@ -30,13 +30,11 @@ pub fn shrink_image(
             (sh as f32 * dims_relative as f32 / 100.) as usize,
         ),
     };
-    if let Some(img_buf) = img.as_rgb8() {
-        let img_buf_resized = resize(sw, sh, dw, dh, img_buf).expect("Failed to resize image");
-        save_image_buffer(dst_path, dw as u32, dh as u32, &img_buf_resized[..])
-            .expect("Failed to save image buffer!");
-    } else {
-        eprintln!("Failed to read image as rgb8!")
-    }
+
+    let img = img.to_rgb8();
+    let img_buf_resized = resize(sw, sh, dw, dh, &img).expect("Failed to resize image");
+    save_image_buffer(dst_path, dw as u32, dh as u32, &img_buf_resized[..])
+        .expect("Failed to save image buffer!");
 
     Ok(())
 }
