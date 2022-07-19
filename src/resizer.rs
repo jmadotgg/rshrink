@@ -42,7 +42,7 @@ pub fn shrink_image(
 }
 
 fn read_image(path: &str) -> Result<DynamicImage, ImageError> {
-    Ok(ImageReader::open(path)?.decode()?)
+    ImageReader::open(path)?.decode()
 }
 
 pub fn save_image_buffer(
