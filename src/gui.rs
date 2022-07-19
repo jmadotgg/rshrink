@@ -155,11 +155,6 @@ impl App for RshrinkApp {
 
 impl RshrinkApp {
     pub fn new(cc: &CreationContext<'_>) -> Self {
-        // Init imagemagick
-        // START.call_once(|| {
-        // magick_wand_genesis();
-        // });
-
         // Retrieve stored settings from file
         let mut stored_settings: Option<Settings> = None;
         if let Some(storage) = cc.storage {
@@ -199,7 +194,6 @@ impl RshrinkApp {
                 .collapsible(false)
                 .title_bar(true)
                 .anchor(Align2::CENTER_CENTER, Vec2::new(0., 0.))
-                // .fixed_size(Vec2::new(300., 300.))
                 .show(ctx, |ui| {
                     Grid::new("Settings grid")
                         .num_columns(2)
@@ -400,10 +394,6 @@ impl RshrinkApp {
                 // Determine if compression finished
                 let mut all_done = true;
                 for (i, selected_file) in self.selected_files.iter().enumerate() {
-                    // For coloring columns
-                    // egui::Frame::window(&(*ctx.style()).clone())..show(ui, |ui| {
-                    // ui.label("Label with red background");
-                    // });
                     let (done, remove_file) = render_file(
                         ui,
                         selected_file,
