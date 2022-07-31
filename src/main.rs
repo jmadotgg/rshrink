@@ -1,4 +1,5 @@
-#![windows_subsystem = "windows"]
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
+                                                                   //
 use eframe::{epaint::Vec2, NativeOptions};
 use rshrink::gui::RshrinkApp;
 

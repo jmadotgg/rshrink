@@ -10,9 +10,11 @@ use eframe::{
 };
 
 use regex::Regex;
+
 use std::{
     fs,
     fs::File,
+    future::Future,
     path::PathBuf,
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
@@ -111,6 +113,7 @@ pub struct RshrinkApp {
     selected_files: Vec<SelectedFile>,
     total_file_size: u64,
     total_new_file_size: Arc<AtomicU64>,
+    #[cfg(not(target_arch = "wasm32"))]
     thread_pool: ThreadPool,
     is_running: bool,
     has_run_once: bool,
@@ -203,9 +206,11 @@ impl RshrinkApp {
                                 &mut self.settings.output_folder_parent_dir_path_enabled,
                                 "Change file directory",
                             );
+
                             if self.settings.output_folder_parent_dir_path == None
                                 && self.settings.output_folder_parent_dir_path_enabled
                             {
+                                #[cfg(not(target_arch = "wasm32"))]
                                 match rfd::FileDialog::new().pick_folder() {
                                     Some(folder) => match folder.to_str() {
                                         Some(f) => {
@@ -275,6 +280,7 @@ impl RshrinkApp {
                 .add_enabled(!self.is_running, Button::new("Select files 📂"))
                 .clicked()
             {
+                #[cfg(not(target_arch = "wasm32"))]
                 if let Some(file_paths) = rfd::FileDialog::new().pick_files() {
                     // Manually reset old total file size
                     self.total_file_size = 0;
@@ -485,6 +491,7 @@ impl RshrinkApp {
         }
     }
 
+    // #[wasm_bindgen]
     fn run(&self) {
         let Settings {
             output_folder_parent_dir_path_enabled: _,
@@ -531,6 +538,7 @@ impl RshrinkApp {
             self.total_new_file_size.store(0, Ordering::Relaxed);
             let total_new_file_size = Arc::clone(&self.total_new_file_size);
 
+            #[cfg(not(target_arch = "wasm32"))]
             self.thread_pool.execute(move || {
                 if let Err(err) = shrink_image(
                     &selected_file.path,
@@ -541,14 +549,14 @@ impl RshrinkApp {
                 ) {
                     eprintln!("Failed to shrink file {}! : {}", selected_file.path, err)
                 } else {
-                    // Read file metadata to determine new file size
+                    //Read file metadata to determine new file size
                     match File::open(&out_file_path) {
                         Ok(file) => match File::metadata(&file) {
                             Ok(metadata) => {
                                 let file_size = metadata.len();
-                                // Store the indiviual files new size
+                                //Store the indiviual files new size
                                 new_filesize.store(file_size, Ordering::Relaxed);
-                                // Store the overall new file size
+                                //Store the overall new file size
                                 total_new_file_size.fetch_add(file_size, Ordering::Relaxed);
                             }
                             Err(err) => {
@@ -558,7 +566,7 @@ impl RshrinkApp {
                         Err(err) => eprintln!("Failed to read new file size! {}", err),
                     }
                 }
-                // Complete the job for the UI
+                //complete the job for the UI
                 done.store(true, Ordering::Relaxed);
             });
             prev_dir = out_folder;
@@ -636,4 +644,9 @@ pub fn render_footer(
             ui.add_space(PADDING);
         });
     });
+}
+
+#[cfg(target_arch = "wasm32")]
+fn execute<F: Future<Output = ()> + 'static>(f: F) {
+    wasm_bindgen_futures::spawn_local(f);
 }
