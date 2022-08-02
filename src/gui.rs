@@ -14,7 +14,6 @@ use regex::Regex;
 use std::{
     fs,
     fs::File,
-    future::Future,
     path::PathBuf,
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
@@ -30,6 +29,9 @@ use crate::{
     threadpool::ThreadPool,
     utils::{round_percent, Dimensions, Resize},
 };
+
+#[cfg(target_arch = "wasm32")]
+use crate::{console_log, execute, log};
 
 const DEFAULT_OUT_DIR: &str = "_rshrinked";
 const DEFAULT_REGEX: &str = r".*.(jpg|png|jpeg|JPG|PNG|JPEG)$";
@@ -188,9 +190,12 @@ impl RshrinkApp {
     }
     pub fn render_menu(&mut self, ctx: &Context, ui: &mut Ui) {
         menu::bar(ui, |ui| {
+            #[cfg(not(target_arch = "wasm32"))]
             if ui.button("Settings").clicked() {
                 self.settings_dialog_opened = !self.settings_dialog_opened;
             };
+
+            #[cfg(not(target_arch = "wasm32"))]
             Window::new("Settings")
                 .open(&mut self.settings_dialog_opened)
                 .resizable(false)
@@ -210,7 +215,6 @@ impl RshrinkApp {
                             if self.settings.output_folder_parent_dir_path == None
                                 && self.settings.output_folder_parent_dir_path_enabled
                             {
-                                #[cfg(not(target_arch = "wasm32"))]
                                 match rfd::FileDialog::new().pick_folder() {
                                     Some(folder) => match folder.to_str() {
                                         Some(f) => {
@@ -299,7 +303,21 @@ impl RshrinkApp {
                         })
                         .collect::<Vec<_>>();
                 }
+
+                #[cfg(target_arch = "wasm32")]
+                {
+                    let dialog = rfd::AsyncFileDialog::new().pick_files();
+                    execute(async {
+                        let files = dialog.await;
+                        if let Some(files) = files {
+                            for file in files.iter() {
+                                console_log!("{:?}", file.read().await)
+                            }
+                        }
+                    })
+                }
             };
+
             // Clear files
             if ui
                 .add_enabled(
@@ -644,9 +662,4 @@ pub fn render_footer(
             ui.add_space(PADDING);
         });
     });
-}
-
-#[cfg(target_arch = "wasm32")]
-fn execute<F: Future<Output = ()> + 'static>(f: F) {
-    wasm_bindgen_futures::spawn_local(f);
 }
