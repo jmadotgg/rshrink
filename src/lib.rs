@@ -1,7 +1,5 @@
 pub mod filesystem;
 pub mod gui;
-// pub mod imagemagick;
-// pub mod main;
 pub mod resizer;
 pub mod threadpool;
 pub mod utils;
@@ -14,7 +12,6 @@ use eframe::wasm_bindgen::{self, prelude::*};
 use gui::RshrinkApp;
 #[cfg(target_arch = "wasm32")]
 use std::panic;
-
 #[cfg(target_arch = "wasm32")]
 pub use wasm_bindgen_rayon::init_thread_pool;
 

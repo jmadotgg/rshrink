@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-RUSTFLAGS='-C target-feature=+atomics,+bulk-memory,+mutable-globals' \                                                                                                                                                                                                       wasm ✱ ◼
-                    rustup run nightly-2022-04-07 \
-                    wasm-pack build --target web
+# Currently working toolchain according to https://github.com/GoogleChromeLabs/wasm-bindgen-rayon
+rustup run nightly-2022-04-07 \
+wasm-pack build --target web
+
+# Serve files
 python server.py
