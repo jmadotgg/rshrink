@@ -9,7 +9,21 @@ use eframe::{
     App, CreationContext, Frame,
 };
 
+#[cfg(target_arch = "wasm32")]
+use futures::{future::try_join_all, Future};
+use futures::{
+    future::{join, join_all},
+    stream::select_all,
+};
+
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen_futures::{future_to_promise, JsFuture};
+
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::{JsCast, JsValue};
+
 use regex::Regex;
+use rfd::FileHandle;
 
 use std::{
     fs,
@@ -17,7 +31,7 @@ use std::{
     path::PathBuf,
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
-        Arc,
+        Arc, Mutex,
     },
 };
 
@@ -66,7 +80,7 @@ impl Default for Settings {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct FileSize {
     original: u64,
     new: Arc<AtomicU64>,
@@ -81,16 +95,21 @@ impl FileSize {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct SelectedFile {
+    #[cfg(not(target_arch = "wasm32"))]
     path: String,
+    #[cfg(not(target_arch = "wasm32"))]
     parent_folder: String,
+    #[cfg(target_arch = "wasm32")]
+    data: Vec<u8>,
     name: String,
     size: FileSize,
     done: Arc<AtomicBool>,
 }
 
 impl SelectedFile {
+    #[cfg(not(target_arch = "wasm32"))]
     fn new(file_path: &PathBuf) -> Option<SelectedFile> {
         let metadata = match fs::metadata(&file_path) {
             Ok(data) => data,
@@ -108,6 +127,19 @@ impl SelectedFile {
             done: Arc::new(AtomicBool::new(false)),
         })
     }
+    #[cfg(target_arch = "wasm32")]
+    async fn new(file_handle: FileHandle) -> SelectedFile {
+        // let file_size = metadata.len();
+        let file_name = file_handle.file_name();
+        let file_data = file_handle.read().await;
+
+        SelectedFile {
+            name: file_name,
+            size: FileSize::new(file_data.len() as u64),
+            data: file_data,
+            done: Arc::new(AtomicBool::new(false)),
+        }
+    }
 }
 
 #[derive(Default)]
@@ -117,6 +149,8 @@ pub struct RshrinkApp {
     total_new_file_size: Arc<AtomicU64>,
     #[cfg(not(target_arch = "wasm32"))]
     thread_pool: ThreadPool,
+    #[cfg(target_arch = "wasm32")]
+    dummy_selected_files: Arc<Mutex<Vec<SelectedFile>>>,
     is_running: bool,
     has_run_once: bool,
     settings_dialog_opened: bool,
@@ -181,6 +215,9 @@ impl RshrinkApp {
             false => Visuals::dark(),
             true => Visuals::light(),
         });
+
+        //#[cfg(target_arch = "wasm32")]
+        //web_sys::EventListener::new().handle;
 
         // Start with saved settings if they exist
         Self {
@@ -304,20 +341,54 @@ impl RshrinkApp {
                         .collect::<Vec<_>>();
                 }
 
+                //#[cfg(target_arch = "wasm32")]
+                //let dialog = rfd::AsyncFileDialog::new().pick_files();
+                //#[cfg(target_arch = "wasm32")]
+                //execute(async {
+                //    let files = dialog.await;
+                //    if let Some(files) = files {
+                //        let selected_files = files
+                //            .into_iter()
+                //            .map(|file| SelectedFile::new(file))
+                //            .collect::<Vec<_>>();
+
+                //        let selected_files = join_all(selected_files).await;
+                //        console_log!("first");
+                //    }
+                //    //       for file in files.iter_mut() {
+                //    //           let selected_file = SelectedFile::new(*file).await;
+                //    //           console_log!("{:?}", selected_file);
+                //    //           // console_log!("{:?}", file.read().await)
+                //    //       }
+                //});
+                //
                 #[cfg(target_arch = "wasm32")]
-                {
-                    let dialog = rfd::AsyncFileDialog::new().pick_files();
-                    execute(async {
-                        let files = dialog.await;
-                        if let Some(files) = files {
-                            for file in files.iter() {
-                                console_log!("{:?}", file.read().await)
-                            }
-                        }
-                    })
-                }
+                let selected_files = Arc::clone(&self.dummy_selected_files);
+                #[cfg(target_arch = "wasm32")]
+                let dialog = rfd::AsyncFileDialog::new().pick_files();
+                #[cfg(target_arch = "wasm32")]
+                let z = future_to_promise(async move {
+                    let files = dialog.await;
+                    if let Some(files) = files {
+                        let _selected_files = files
+                            .into_iter()
+                            .map(|file| SelectedFile::new(file))
+                            .collect::<Vec<_>>();
+
+                        let mut selected_files = selected_files.lock().unwrap();
+                        *selected_files = join_all(_selected_files).await;
+
+                        console_log!("first");
+                    }
+                    Ok::<JsValue, JsValue>(JsValue::from(3 as i32))
+                });
             };
 
+            #[cfg(target_arch = "wasm32")]
+            console_log!(
+                "Bilderanzahl: {}",
+                self.dummy_selected_files.lock().unwrap().len()
+            );
             // Clear files
             if ui
                 .add_enabled(
@@ -472,12 +543,14 @@ impl RshrinkApp {
             );
         }
         // Collect dropped files
+        #[cfg(not(target_arch = "wasm32"))]
         if !ctx.input().raw.dropped_files.is_empty() {
             // Manually reset old total file size
             self.total_file_size = 0;
             self.total_new_file_size
                 .store(self.total_file_size, Ordering::Relaxed);
             self.has_run_once = false;
+
             self.selected_files = ctx
                 .input()
                 .raw
@@ -494,14 +567,20 @@ impl RshrinkApp {
                     None => false,
                 })
                 .map(|dropped_file| {
+                    #[cfg(target_arch = "wasm32")]
+                    console_log!("{:?}", dropped_file);
+
+                    #[cfg(not(target_arch = "wasm32"))]
                     let path_buf = dropped_file.path.clone().expect(&format!(
                         "Failed to read dropped file {}",
                         &dropped_file.name
                     ));
+                    #[cfg(not(target_arch = "wasm32"))]
                     let selected_file = SelectedFile::new(&path_buf).expect(&format!(
                         "Failed to read file {}",
                         path_buf.display().to_string()
                     ));
+
                     self.total_file_size += selected_file.size.original;
                     selected_file
                 })
@@ -509,7 +588,9 @@ impl RshrinkApp {
         }
     }
 
-    // #[wasm_bindgen]
+    #[cfg(target_arch = "wasm32")]
+    fn run(&self) {}
+    #[cfg(not(target_arch = "wasm32"))]
     fn run(&self) {
         let Settings {
             output_folder_parent_dir_path_enabled: _,
@@ -605,6 +686,7 @@ fn render_file(
         false => false,
     };
     ui.horizontal(|ui| {
+        #[cfg(not(target_arch = "wasm32"))]
         ui.label(RichText::new(&selected_file.name).strong())
             .on_hover_text_at_pointer(&selected_file.path);
         ui.with_layout(Layout::right_to_left(), |ui| {
