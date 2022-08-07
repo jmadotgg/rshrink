@@ -8,9 +8,14 @@ window.my_func = (nums) => {
   return sum;
 };
 
+window.selectedFiles = (selectedFiles) => {
+  window.post;
+};
+window.threadWorker = new Worker("worker.js", { type: "module" });
+
 (async () => {
   await init();
   console.log("Initialized wasm");
-  new Worker("worker.js", { type: "module" });
+  // const threadWorker = new Worker("worker.js", { type: "module" });
   let _app = run("Rshrink");
 })();

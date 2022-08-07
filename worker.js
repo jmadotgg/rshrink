@@ -9,3 +9,7 @@ console.log("Worker created");
   let summed = sum([1, 2, 3, 4, 5, 6, 8, 0]);
   console.log("Sum", summed);
 })();
+
+self.onmessage = (msg) => {
+  console.log(msg);
+};

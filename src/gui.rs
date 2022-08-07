@@ -483,12 +483,10 @@ impl RshrinkApp {
     #[cfg(target_arch = "wasm32")]
     fn run(&self) {
         let nums: [u8; 3] = [1, 2, 3];
-        let x = my_func(&nums);
-        console_log!("{:?}", x);
-
-        // for (i, selected_file) in self.selected_files.lock().unwrap().iter().enumerate() {
-        //     println!("compressing {}", selected_file.name);
-        // }
+        // let x = my_func(&nums);
+        // console_log!("{:?}", x);
+        use crate::postMessage;
+        postMessage(&nums, "http://localhost:8080")
     }
     #[cfg(not(target_arch = "wasm32"))]
     fn run(&self) {

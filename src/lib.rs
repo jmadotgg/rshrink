@@ -52,6 +52,11 @@ extern "C" {
     #[wasm_bindgen(js_namespace = console)]
     pub fn log(s: &str);
     pub fn my_func(nums: &[u8]) -> i32;
+    #[wasm_bindgen(js_namespace = ["window", "threadWorker"])]
+    pub fn postMessage(message: &[u8], targetOrigin: &str);
+    // #[wasm_bindgen(js_namespace = window)]
+    // pub fn postToThreadWorker(message: &[u8], targetOrigin: &str);
+
 }
 
 // Create macro to use rust like syntax
