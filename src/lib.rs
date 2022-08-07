@@ -4,8 +4,8 @@ pub mod resizer;
 pub mod threadpool;
 pub mod utils;
 
-//#[cfg(target_arch = "wasm32")]
-//use wasm_bindgen::prelude::*;
+#[cfg(not(target_arch = "wasm32"))]
+use std::fs;
 
 #[cfg(target_arch = "wasm32")]
 use gui::RshrinkApp;
@@ -17,7 +17,18 @@ use console_error_panic_hook;
 use eframe::wasm_bindgen::{self, prelude::*};
 
 #[cfg(target_arch = "wasm32")]
+use rfd::FileHandle;
+use serde::{Deserialize, Serialize};
+#[cfg(target_arch = "wasm32")]
 use std::{future::Future, panic};
+use std::{
+    path::PathBuf,
+    sync::{
+        atomic::{AtomicBool, AtomicU64},
+        Arc,
+    },
+};
+use utils::{Dimensions, Resize};
 
 #[cfg(target_arch = "wasm32")]
 use rayon::prelude::*;
@@ -81,4 +92,97 @@ async fn run_async(canvas_id: String) -> Result<(), JsValue> {
         Box::new(|cc| Box::new(RshrinkApp::new(cc))),
     );
     Ok(())
+}
+
+const DEFAULT_OUT_DIR: &str = "_rshrinked";
+
+#[derive(Serialize, Deserialize)]
+pub struct Settings {
+    dimensions: Dimensions,
+    resize_method: Resize,
+    dimensions_relative: u32,
+    change_dimensions: bool,
+    compression_quality: usize,
+    output_folder_name: String,
+    output_folder_parent_dir_path: Option<String>,
+    output_folder_parent_dir_path_enabled: bool,
+    light_mode: bool,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            dimensions: Dimensions::default(),
+            resize_method: Resize::Relative,
+            dimensions_relative: 50,
+            change_dimensions: true,
+            compression_quality: 85,
+            output_folder_name: String::from(DEFAULT_OUT_DIR),
+            output_folder_parent_dir_path_enabled: false,
+            output_folder_parent_dir_path: None,
+            light_mode: false,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct SelectedFile {
+    #[cfg(not(target_arch = "wasm32"))]
+    path: String,
+    #[cfg(not(target_arch = "wasm32"))]
+    parent_folder: String,
+    #[cfg(target_arch = "wasm32")]
+    data: Vec<u8>,
+    name: String,
+    size: FileSize,
+    done: Arc<AtomicBool>,
+}
+
+impl SelectedFile {
+    #[cfg(not(target_arch = "wasm32"))]
+    fn new(file_path: &PathBuf) -> Option<SelectedFile> {
+        let metadata = match fs::metadata(&file_path) {
+            Ok(data) => data,
+            Err(_) => return None,
+        };
+        let parent_folder = String::from(file_path.parent()?.to_str()?);
+        let file_size = metadata.len();
+        let file_name = String::from(file_path.file_name()?.to_str()?);
+
+        Some(SelectedFile {
+            path: file_path.display().to_string(),
+            parent_folder,
+            name: file_name,
+            size: FileSize::new(file_size),
+            done: Arc::new(AtomicBool::new(false)),
+        })
+    }
+    #[cfg(target_arch = "wasm32")]
+    async fn new(file_handle: FileHandle) -> SelectedFile {
+        // let file_size = metadata.len();
+        let file_name = file_handle.file_name();
+        let file_data = file_handle.read().await;
+
+        SelectedFile {
+            name: file_name,
+            size: FileSize::new(file_data.len() as u64),
+            data: file_data,
+            done: Arc::new(AtomicBool::new(false)),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+struct FileSize {
+    original: u64,
+    new: Arc<AtomicU64>,
+}
+
+impl FileSize {
+    fn new(original: u64) -> Self {
+        Self {
+            original,
+            new: Arc::new(AtomicU64::new(original)),
+        }
+    }
 }

@@ -12,22 +12,20 @@ use eframe::{
 use regex::Regex;
 
 use std::{
-    fs,
     fs::File,
     path::PathBuf,
     sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicU64, Ordering},
         Arc,
     },
 };
-
-use serde::{Deserialize, Serialize};
 
 use crate::{
     filesystem::create_dir_if_not_exists,
     resizer::shrink_image,
     threadpool::ThreadPool,
-    utils::{round_percent, Dimensions, Resize},
+    utils::{round_percent, Resize},
+    SelectedFile, Settings,
 };
 
 #[cfg(target_arch = "wasm32")]
@@ -46,114 +44,8 @@ use std::sync::Mutex;
 #[cfg(target_arch = "wasm32")]
 use rayon::prelude::*;
 
-const DEFAULT_OUT_DIR: &str = "_rshrinked";
 const DEFAULT_REGEX: &str = r".*.(jpg|png|jpeg|JPG|PNG|JPEG)$";
 const PADDING: f32 = 5.0;
-
-#[derive(Serialize, Deserialize)]
-struct Settings {
-    dimensions: Dimensions,
-    resize_method: Resize,
-    dimensions_relative: u32,
-    change_dimensions: bool,
-    compression_quality: usize,
-    output_folder_name: String,
-    output_folder_parent_dir_path: Option<String>,
-    output_folder_parent_dir_path_enabled: bool,
-    light_mode: bool,
-}
-
-impl Default for Settings {
-    fn default() -> Self {
-        Self {
-            dimensions: Dimensions::default(),
-            resize_method: Resize::Relative,
-            dimensions_relative: 50,
-            change_dimensions: true,
-            compression_quality: 85,
-            output_folder_name: String::from(DEFAULT_OUT_DIR),
-            output_folder_parent_dir_path_enabled: false,
-            output_folder_parent_dir_path: None,
-            light_mode: false,
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
-struct FileSize {
-    original: u64,
-    new: Arc<AtomicU64>,
-}
-
-impl FileSize {
-    fn new(original: u64) -> Self {
-        Self {
-            original,
-            new: Arc::new(AtomicU64::new(original)),
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
-struct SelectedFile {
-    #[cfg(not(target_arch = "wasm32"))]
-    path: String,
-    #[cfg(not(target_arch = "wasm32"))]
-    parent_folder: String,
-    #[cfg(target_arch = "wasm32")]
-    data: Vec<u8>,
-    name: String,
-    size: FileSize,
-    done: Arc<AtomicBool>,
-}
-
-impl SelectedFile {
-    #[cfg(not(target_arch = "wasm32"))]
-    fn new(file_path: &PathBuf) -> Option<SelectedFile> {
-        let metadata = match fs::metadata(&file_path) {
-            Ok(data) => data,
-            Err(_) => return None,
-        };
-        let parent_folder = String::from(file_path.parent()?.to_str()?);
-        let file_size = metadata.len();
-        let file_name = String::from(file_path.file_name()?.to_str()?);
-
-        Some(SelectedFile {
-            path: file_path.display().to_string(),
-            parent_folder,
-            name: file_name,
-            size: FileSize::new(file_size),
-            done: Arc::new(AtomicBool::new(false)),
-        })
-    }
-    #[cfg(target_arch = "wasm32")]
-    async fn new(file_handle: FileHandle) -> SelectedFile {
-        // let file_size = metadata.len();
-        let file_name = file_handle.file_name();
-        let file_data = file_handle.read().await;
-
-        SelectedFile {
-            name: file_name,
-            size: FileSize::new(file_data.len() as u64),
-            data: file_data,
-            done: Arc::new(AtomicBool::new(false)),
-        }
-    }
-}
-//#[cfg(target_arch = "wasm32")]
-//struct MyRayon(rayon::ThreadPool);
-//
-//#[cfg(target_arch = "wasm32")]
-//impl Default for MyRayon {
-//    fn default() -> Self {
-//        Self(
-//            rayon::ThreadPoolBuilder::new()
-//                .num_threads(4)
-//                .build()
-//                .unwrap(),
-//        )
-//    }
-//}
 
 #[derive(Default)]
 pub struct RshrinkApp {
