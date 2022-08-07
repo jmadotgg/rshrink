@@ -13,9 +13,6 @@ serde_json = "1.0"
 image = "0.24.2"
 resize = "0.7.3"
 rgb = "0.8.33"
-futures = "0.3"
-rayon = "1.5.3"
-tokio = "1.20.1"
 # ffmpeg-next = "5.0.3"
 # clap = { version = "3.1.8", features = ["derive"] }
 
@@ -30,7 +27,9 @@ lto = true
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_error_panic_hook = "0.1.7"
 tracing-wasm = "0.2"
+rayon = "1.5.3"
 wasm-bindgen-rayon = {version = "1.0.3", features = ["no-bundler"]}
 wasm-bindgen-futures = "0.4.32"
 wasm-bindgen = "0.2.82"
 web-sys = {version = "0.3.59", features = ['EventListener']}
+futures = "0.3"

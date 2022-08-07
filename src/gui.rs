@@ -9,21 +9,7 @@ use eframe::{
     App, CreationContext, Frame,
 };
 
-#[cfg(target_arch = "wasm32")]
-use futures::{future::try_join_all, Future};
-use futures::{
-    future::{join, join_all},
-    stream::select_all,
-};
-
-#[cfg(target_arch = "wasm32")]
-use wasm_bindgen_futures::{future_to_promise, JsFuture};
-
-#[cfg(target_arch = "wasm32")]
-use wasm_bindgen::{JsCast, JsValue};
-
 use regex::Regex;
-use rfd::FileHandle;
 
 use std::{
     fs,
@@ -31,7 +17,7 @@ use std::{
     path::PathBuf,
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
-        Arc, Mutex,
+        Arc,
     },
 };
 
@@ -45,7 +31,20 @@ use crate::{
 };
 
 #[cfg(target_arch = "wasm32")]
-use crate::{console_log, execute, log};
+use futures::future::join_all;
+
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::{JsCast, JsValue};
+
+#[cfg(target_arch = "wasm32")]
+use crate::{console_log, execute, log, my_func};
+#[cfg(target_arch = "wasm32")]
+use rfd::FileHandle;
+#[cfg(target_arch = "wasm32")]
+use std::sync::Mutex;
+
+#[cfg(target_arch = "wasm32")]
+use rayon::prelude::*;
 
 const DEFAULT_OUT_DIR: &str = "_rshrinked";
 const DEFAULT_REGEX: &str = r".*.(jpg|png|jpeg|JPG|PNG|JPEG)$";
@@ -141,16 +140,33 @@ impl SelectedFile {
         }
     }
 }
+//#[cfg(target_arch = "wasm32")]
+//struct MyRayon(rayon::ThreadPool);
+//
+//#[cfg(target_arch = "wasm32")]
+//impl Default for MyRayon {
+//    fn default() -> Self {
+//        Self(
+//            rayon::ThreadPoolBuilder::new()
+//                .num_threads(4)
+//                .build()
+//                .unwrap(),
+//        )
+//    }
+//}
 
 #[derive(Default)]
 pub struct RshrinkApp {
+    #[cfg(not(target_arch = "wasm32"))]
     selected_files: Vec<SelectedFile>,
+    #[cfg(target_arch = "wasm32")]
+    selected_files: Arc<Mutex<Vec<SelectedFile>>>,
     total_file_size: u64,
     total_new_file_size: Arc<AtomicU64>,
     #[cfg(not(target_arch = "wasm32"))]
     thread_pool: ThreadPool,
-    #[cfg(target_arch = "wasm32")]
-    dummy_selected_files: Arc<Mutex<Vec<SelectedFile>>>,
+    //#[cfg(target_arch = "wasm32")]
+    //thread_pool: MyRayon,
     is_running: bool,
     has_run_once: bool,
     settings_dialog_opened: bool,
@@ -161,12 +177,18 @@ impl App for RshrinkApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut Frame) {
         let mut last_folder = String::new();
         // Footer (first, because of CentralPanel filling the remaininng space)
+
+        #[cfg(not(target_arch = "wasm32"))]
+        let file_count = self.selected_files.len();
+        #[cfg(target_arch = "wasm32")]
+        let file_count = self.selected_files.lock().unwrap().len();
+
         render_footer(
             ctx,
             self.total_file_size,
             Arc::clone(&self.total_new_file_size),
             self.has_run_once,
-            self.selected_files.len(),
+            file_count,
         );
         CentralPanel::default().show(ctx, |ui| {
             // Render menu
@@ -215,9 +237,6 @@ impl RshrinkApp {
             false => Visuals::dark(),
             true => Visuals::light(),
         });
-
-        //#[cfg(target_arch = "wasm32")]
-        //web_sys::EventListener::new().handle;
 
         // Start with saved settings if they exist
         Self {
@@ -341,63 +360,38 @@ impl RshrinkApp {
                         .collect::<Vec<_>>();
                 }
 
-                //#[cfg(target_arch = "wasm32")]
-                //let dialog = rfd::AsyncFileDialog::new().pick_files();
-                //#[cfg(target_arch = "wasm32")]
-                //execute(async {
-                //    let files = dialog.await;
-                //    if let Some(files) = files {
-                //        let selected_files = files
-                //            .into_iter()
-                //            .map(|file| SelectedFile::new(file))
-                //            .collect::<Vec<_>>();
-
-                //        let selected_files = join_all(selected_files).await;
-                //        console_log!("first");
-                //    }
-                //    //       for file in files.iter_mut() {
-                //    //           let selected_file = SelectedFile::new(*file).await;
-                //    //           console_log!("{:?}", selected_file);
-                //    //           // console_log!("{:?}", file.read().await)
-                //    //       }
-                //});
-                //
                 #[cfg(target_arch = "wasm32")]
-                let selected_files = Arc::clone(&self.dummy_selected_files);
-                #[cfg(target_arch = "wasm32")]
-                let dialog = rfd::AsyncFileDialog::new().pick_files();
-                #[cfg(target_arch = "wasm32")]
-                let z = future_to_promise(async move {
-                    let files = dialog.await;
-                    if let Some(files) = files {
-                        let _selected_files = files
-                            .into_iter()
-                            .map(|file| SelectedFile::new(file))
-                            .collect::<Vec<_>>();
+                {
+                    let selected_files = Arc::clone(&self.selected_files);
+                    let dialog = rfd::AsyncFileDialog::new().pick_files();
+                    execute(async move {
+                        let files = dialog.await;
+                        if let Some(files) = files {
+                            let _selected_files = files
+                                .into_iter()
+                                .map(|file| SelectedFile::new(file))
+                                .collect::<Vec<_>>();
 
-                        let mut selected_files = selected_files.lock().unwrap();
-                        *selected_files = join_all(_selected_files).await;
+                            let mut selected_files = selected_files.lock().unwrap();
+                            *selected_files = join_all(_selected_files).await;
+                        }
+                    });
+                };
+            }
 
-                        console_log!("first");
-                    }
-                    Ok::<JsValue, JsValue>(JsValue::from(3 as i32))
-                });
-            };
-
-            #[cfg(target_arch = "wasm32")]
-            console_log!(
-                "Bilderanzahl: {}",
-                self.dummy_selected_files.lock().unwrap().len()
-            );
             // Clear files
+            #[cfg(not(target_arch = "wasm32"))]
+            let selected_files = &mut self.selected_files;
+            #[cfg(target_arch = "wasm32")]
+            let mut selected_files = self.selected_files.lock().unwrap();
             if ui
                 .add_enabled(
-                    !self.is_running && !self.selected_files.is_empty(),
-                    Button::new("Clear all files ❌"),
+                    !self.is_running && selected_files.is_empty(),
+                    Button::new("Clear all  ❌"),
                 )
                 .clicked()
             {
-                self.selected_files.clear();
+                selected_files.clear();
                 self.has_run_once = false;
                 self.total_file_size = 0;
                 self.total_new_file_size.store(0, Ordering::Relaxed);
@@ -405,13 +399,13 @@ impl RshrinkApp {
             // Run program
             if ui
                 .add_enabled(
-                    !self.is_running && !self.selected_files.is_empty(),
+                    !self.is_running && !selected_files.is_empty(),
                     Button::new("Compress files 🔨"),
                 )
                 .clicked()
             {
                 // Clean up potential previous run before initializing a new one
-                for selected_file in &self.selected_files {
+                for selected_file in selected_files.iter() {
                     let done = Arc::clone(&selected_file.done);
                     done.store(false, Ordering::SeqCst);
                 }
@@ -483,12 +477,18 @@ impl RshrinkApp {
         });
     }
     pub fn render_main(&mut self, ui: &mut Ui, last_folder: &mut str) {
-        if !self.selected_files.is_empty() {
+        #[cfg(not(target_arch = "wasm32"))]
+        let selected_files = &mut self.selected_files;
+        #[cfg(target_arch = "wasm32")]
+        let mut selected_files = self.selected_files.lock().unwrap();
+        if !selected_files.is_empty() {
             ScrollArea::vertical().show(ui, |ui| {
                 let mut files_to_remove_indexes = Vec::new();
                 // Determine if compression finished
                 let mut all_done = true;
-                for (i, selected_file) in self.selected_files.iter().enumerate() {
+
+                for (i, selected_file) in selected_files.iter().enumerate() {
+                    println!("{:?}", selected_file.name);
                     let (done, remove_file) = render_file(
                         ui,
                         selected_file,
@@ -514,7 +514,7 @@ impl RshrinkApp {
                     self.is_running = false;
                 }
                 for i in files_to_remove_indexes {
-                    self.selected_files.remove(i);
+                    selected_files.remove(i);
                 }
             });
         } else {
@@ -589,7 +589,15 @@ impl RshrinkApp {
     }
 
     #[cfg(target_arch = "wasm32")]
-    fn run(&self) {}
+    fn run(&self) {
+        let nums: [u8; 3] = [1, 2, 3];
+        let x = my_func(&nums);
+        console_log!("{:?}", x);
+
+        // for (i, selected_file) in self.selected_files.lock().unwrap().iter().enumerate() {
+        //     println!("compressing {}", selected_file.name);
+        // }
+    }
     #[cfg(not(target_arch = "wasm32"))]
     fn run(&self) {
         let Settings {
@@ -689,6 +697,8 @@ fn render_file(
         #[cfg(not(target_arch = "wasm32"))]
         ui.label(RichText::new(&selected_file.name).strong())
             .on_hover_text_at_pointer(&selected_file.path);
+        #[cfg(target_arch = "wasm32")]
+        ui.label(RichText::new(&selected_file.name).strong());
         ui.with_layout(Layout::right_to_left(), |ui| {
             if ui.add_enabled(!is_running, Button::new("❌")).clicked() {
                 remove_file = true

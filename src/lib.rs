@@ -20,6 +20,9 @@ use eframe::wasm_bindgen::{self, prelude::*};
 use std::{future::Future, panic};
 
 #[cfg(target_arch = "wasm32")]
+use rayon::prelude::*;
+
+#[cfg(target_arch = "wasm32")]
 pub use wasm_bindgen_rayon::init_thread_pool;
 
 #[cfg(target_arch = "wasm32")]
@@ -37,6 +40,7 @@ pub fn execute<F: Future<Output = ()> + 'static>(f: F) {
 extern "C" {
     #[wasm_bindgen(js_namespace = console)]
     pub fn log(s: &str);
+    pub fn my_func(nums: &[u8]) -> i32;
 }
 
 // Create macro to use rust like syntax
@@ -44,6 +48,12 @@ extern "C" {
 #[macro_export]
 macro_rules! console_log {
     ($($t:tt)*) => (log(&format_args!($($t)*).to_string()))
+}
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn sum(numbers: &[i32]) -> i32 {
+    numbers.par_iter().sum()
 }
 
 #[cfg(target_arch = "wasm32")]
