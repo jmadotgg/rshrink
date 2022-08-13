@@ -259,13 +259,17 @@ impl RshrinkApp {
                     execute(async move {
                         let files = dialog.await;
                         if let Some(files) = files {
+                            // Maybe constrain the number of files to 300
+                            // in order to not crash the sandbox
                             let _selected_files = files
                                 .into_iter()
                                 .map(|file| SelectedFile::new(file))
                                 .collect::<Vec<_>>();
 
+                            let _selected_files = join_all(_selected_files).await;
+
                             let mut selected_files = selected_files.lock().unwrap();
-                            *selected_files = join_all(_selected_files).await;
+                            *selected_files = _selected_files;
                         }
                     });
                 };

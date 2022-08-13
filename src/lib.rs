@@ -59,6 +59,9 @@ extern "C" {
 
 }
 
+// TODO: Look at reference https://github.com/GoogleChromeLabs/wasm-bindgen-rayon/issues/18
+// TODO: Look at example https://github.com/GoogleChromeLabs/wasm-bindgen-rayon#usage-without-bundlers
+
 // Create macro to use rust like syntax
 #[cfg(target_arch = "wasm32")]
 #[macro_export]
