@@ -35,7 +35,7 @@ use futures::future::join_all;
 use wasm_bindgen::{JsCast, JsValue};
 
 #[cfg(target_arch = "wasm32")]
-use crate::{console_log, execute, log, my_func};
+use crate::{console_log, execute, log};
 #[cfg(target_arch = "wasm32")]
 use rfd::FileHandle;
 #[cfg(target_arch = "wasm32")]
@@ -487,10 +487,16 @@ impl RshrinkApp {
     #[cfg(target_arch = "wasm32")]
     fn run(&self) {
         let nums: [u8; 3] = [1, 2, 3];
+        use crate::myFunc;
+        //alert("hello");
+        myFunc();
+        //use crate::iter_par;
+        //let sum = iter_par(nums);
+        //console_log!("Sum: {}", sum);
         // let x = my_func(&nums);
         // console_log!("{:?}", x);
-        use crate::postMessage;
-        postMessage(&nums, "http://localhost:8080")
+        //use crate::postMessage;
+        //postMessage(&nums, "http://localhost:8080")
     }
     #[cfg(not(target_arch = "wasm32"))]
     fn run(&self) {

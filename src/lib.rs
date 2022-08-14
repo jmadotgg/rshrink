@@ -44,6 +44,17 @@ pub fn execute<F: Future<Output = ()> + 'static>(f: F) {
     spawn_local(f)
 }
 
+//#[cfg(target_arch = "wasm32")]
+//pub fn iter_par(numbers: [u8; 3]) -> u8 {
+//    numbers.par_iter().sum()
+//}
+//#[cfg(target_arch = "wasm32")]
+//#[wasm_bindgen]
+//extern "C" {
+//    #[wasm_bindgen(module = "/index.js")]
+//    pub fn myFunc();
+//}
+
 // https://rustwasm.github.io/wasm-bindgen/examples/console-log.html
 // Log to browser console
 #[cfg(target_arch = "wasm32")]
@@ -51,12 +62,13 @@ pub fn execute<F: Future<Output = ()> + 'static>(f: F) {
 extern "C" {
     #[wasm_bindgen(js_namespace = console)]
     pub fn log(s: &str);
-    pub fn my_func(nums: &[u8]) -> i32;
-    #[wasm_bindgen(js_namespace = ["window", "threadWorker"])]
-    pub fn postMessage(message: &[u8], targetOrigin: &str);
-    // #[wasm_bindgen(js_namespace = window)]
-    // pub fn postToThreadWorker(message: &[u8], targetOrigin: &str);
-
+    //pub fn my_func(nums: &[u8]) -> i32;
+    //#[wasm_bindgen(js_namespace = ["window", "threadWorker"])]
+    //pub fn postMessage(message: &[u8], targetOrigin: &str);
+    //#[wasm_bindgen(js_namespace = window)]
+    //pub fn alert(s: &str);
+    #[wasm_bindgen(js_namespace = console)]
+    pub fn myFunc();
 }
 
 // TODO: Look at reference https://github.com/GoogleChromeLabs/wasm-bindgen-rayon/issues/18

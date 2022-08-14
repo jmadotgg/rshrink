@@ -3,5 +3,6 @@
 #rustup run nightly-2022-04-07 \
 #wasm-pack build --target web
 yarn build
-# Serve files
-python server.py
+# Serve files on localhost:8080/dist
+python server.py 
+#python -m http.server --directory ./dist
