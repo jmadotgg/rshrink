@@ -89,7 +89,6 @@ pub fn run(canvas_id: String) {
     spawn_local(async {
         run_async(canvas_id).await.unwrap_throw();
     });
-    // let web_options = eframe::WebOptions::default();
 }
 
 #[cfg(target_arch = "wasm32")]

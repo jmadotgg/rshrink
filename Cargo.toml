@@ -28,8 +28,10 @@ lto = true
 console_error_panic_hook = "0.1.7"
 tracing-wasm = "0.2"
 rayon = "1.5.3"
-wasm-bindgen-rayon = {version = "1.0.3", features = ["no-bundler"]}
+wasm-bindgen-rayon = {version = "1.0.3"}
+#wasm-bindgen-rayon = {version = "1.0.3", features = ["no-bundler"]}
 wasm-bindgen-futures = "0.4.32"
 wasm-bindgen = "0.2.82"
 web-sys = {version = "0.3.59", features = ['EventListener']}
 futures = "0.3"
+
